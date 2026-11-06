@@ -8,6 +8,7 @@ p { margin: 0 0 var(--space-3); }
 ul { margin: 0; padding-left: 1.2em; }
 li { margin-bottom: var(--space-2); }
 a { color: var(--accent); text-underline-offset: 2px; }
+.nowrap { white-space: nowrap; }
 .btn { text-decoration: none; }
 .btn.primary, .btn.primary:visited { color: var(--text-on-accent); }
 .btn.secondary, .btn.secondary:visited { color: var(--text); }
