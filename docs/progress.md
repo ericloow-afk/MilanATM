@@ -153,3 +153,10 @@ Dev-länken (`https://172.x.x.x:5174`) funkar bara på samma nät. Utomhus anvä
 - **Prestandamätare:** långtryck på klockan (eller `?perf=1`): FPS, längsta bildruta, JS-tid per bildruta, omräkningstid, antal tåg, bygge.
 - **Hastighetsrapport:** `docs/segment-speed-report.md` visar nu både med modell (median 10,3 m/s, toppfart max 26,1 m/s på ett M1-segment) och tidtabellen exakt.
 - 196 tester gröna, bygget ok. **Ej mätt på iPhone:** FPS/JS-tid (webbläsarpanelen pausar bildrutor när den är dold, så siffrorna här säger inget).
+
+## Fas 4 – filter mot riktig sensorlogg (2026-11-06)
+- Logg sparad som `test/fixtures/sensor-log-indoor-2026-11-06.csv`; replay-hjälp `src/ar/replay.ts`, tester `src/ar/replay.test.ts` (16 st), rapport `docs/filter-replay.md` (`npm run replay`).
+- `OrientationFilter` har fått grindar för kompassen: headingAcc ≤ 25°, kamerahöjd ≤ 20° (≈ beta 110°), vinkelhastighet ≤ 120°/s, innovationsgräns 45° (med återtagning efter 4 s), accuracy-viktad förstärkning. Kompassreferensen räknas på råa kvaternionen. Alla parametrar i `DEFAULT_FILTER_CONFIG` (tauYaw 5 s som standard).
+- Resultat på loggen: a) vyn ökar aldrig mer än 0,7° över råa rotationen, b) yaw ändras 0,0°/0,1° vid kompassvändningarna, c) 0,0°/s under headingAcc > 25°, d) ±4,1° av medianen. Kompassen användes i 110 av 144 samples.
+- Fynd: "kompassen släpar vid snabb vridning" var till stor del gamma som saknades i heading + alpha; med hela kvaternionen är offseten stabil upp till 113°/s. Hastighetsgrinden är därför satt högt (120°/s). Se rapporten för förslag på tauYaw efter utomhustestet.
+- 212 tester gröna, bygget ok. Inomhuslogg: ej verifierat utomhus.

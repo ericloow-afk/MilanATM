@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "build:data": "node tools/build-metro.mjs data/raw/gtfs.zip",
-    "next": "node tools/next-departures.mjs"
+    "next": "node tools/next-departures.mjs",
+    "replay": "vite-node tools/filter-replay-report.ts"
   },
   "dependencies": {
     "maplibre-gl": "^6.16.0",

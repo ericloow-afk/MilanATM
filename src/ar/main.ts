@@ -304,7 +304,15 @@ function updateOverlay(haveOrientation: boolean): void {
   const status = dataStatus(metro, lastReadingNow);
   const cs = filter.compassState;
   const compassText =
-    cs === 'ok' ? 'ok' : cs === 'uncalibrated' ? 'OKALIBRERAD (ignoreras)' : cs === 'inaccurate' ? 'för osäker (ignoreras)' : 'saknas';
+    {
+      ok: 'ok',
+      uncalibrated: 'OKALIBRERAD (ignoreras)',
+      inaccurate: 'för osäker (ignoreras)',
+      'looking-up': 'tittar uppåt (ignoreras)',
+      moving: 'snabb vridning (ignoreras)',
+      jump: 'språng avvisat',
+      none: 'saknas',
+    }[cs];
   const accText = gpsAccuracy == null ? 'väntar på GPS…' : `±${Math.round(gpsAccuracy)} m ${gpsAccuracy <= 15 ? '●' : gpsAccuracy <= 30 ? '◐' : '○'}`;
   statusText = [
     `källa: ${source.kind === 'real' ? 'sensorer' : 'SIMULATOR'}   GPS ${accText}`,
