@@ -1,5 +1,6 @@
 /*
  * Designtokens – "Strata × Duomo"
+ * Ett lugnt, exakt verktyg: solida ytor, 1 px hårlinjer, små radier. Inga glas/blur-effekter, gradienter på ytor, glöd eller pulsering.
  * Mörkt är standard (AR). Ljust läge gäller bara ytor som följer systemet (kartan) via prefers-color-scheme.
  * AR-sidor sätter klassen `force-dark` på <html> så att de alltid förblir mörka.
  * Se docs/design.md för principerna. Ändra värden här, inte i komponenterna.
@@ -8,85 +9,79 @@
 :root {
   color-scheme: dark light;
 
-  /* ---------- Färg: yta (mörk, standard) ---------- */
-  --bg: #0e1114;                         /* grafit */
-  --surface-solid: #171b21;              /* ogenomskinlig panel (reserv utan backdrop-filter) */
-  --surface-1: rgba(20, 24, 29, 0.72);   /* suddad panel över kamera */
-  --surface-2: rgba(30, 35, 42, 0.82);   /* upphöjd panel / sheet */
-  --surface-3: rgba(44, 50, 59, 0.88);   /* tryckt/vald yta */
-  --scrim: rgba(6, 8, 10, 0.62);         /* mörkläggning bakom modaler */
-  --hairline: rgba(242, 239, 232, 0.14); /* 1 px innerkant */
-  --hairline-strong: rgba(242, 239, 232, 0.28);
+  /* ---------- Färg: ytor (solida) ---------- */
+  --bg: #0e1114;               /* grafit */
+  --surface-1: #14181d;        /* paneler */
+  --surface-2: #1a1f26;        /* upphöjd panel, knappar */
+  --surface-3: #232930;        /* tryckt eller vald yta */
+  --scrim: rgba(6, 8, 10, 0.6);
+  --hairline: #2a3038;         /* 1 px linjer */
+  --hairline-strong: #3b434d;
 
   /* ---------- Färg: text ---------- */
-  --text: #f2efe8;          /* marmorvit (varm) */
-  --text-muted: #b3aea3;
+  --text: #f2efe8;             /* marmorvit (varm) */
+  --text-muted: #a8a398;
   --text-on-accent: #06312d;
-  --text-on-gold: #2a1f08;
 
-  /* ---------- Färg: accenter ---------- */
-  --accent: #3dd6c6;        /* aqua: interaktivt och funktionellt */
-  --accent-strong: #7be8dc; /* hover/aktiv */
-  --accent-soft: rgba(61, 214, 198, 0.18);
-  --gold: #d9b15b;          /* Madonnina: ENDAST ordmärket och "0 m"-markeringen; aldrig två guldelement i samma vy; aldrig för valt tåg (för likt M3:s gula) */
-  --gold-soft: rgba(217, 177, 91, 0.2);
-  --marble-rose: #e9d3cc;   /* Candoglia-marmorns rosa ton, används sparsamt */
+  /* ---------- Färg: accent och identitet ---------- */
+  --accent: #3dd6c6;           /* aqua: interaktivt och funktionellt */
+  --accent-strong: #7be8dc;
+  --gold: #d9b15b;             /* Madonnina: ENDAST ordmärket och "0 m"-markeringen; aldrig två guldelement i samma vy; aldrig för valt tåg */
 
   /* ---------- Färg: status ---------- */
   --success: #3dd6c6;
   --warning: #f2a93b;
   --danger: #ff7b6e;
-  --info: #9fb4ff;
 
-  /* ---------- Linjefärger (fasta, ur GTFS) + läsbar textfärg på dem ---------- */
-  --line-m1: #ff0000;  --line-m1-ink: #12100f;
-  --line-m2: #73ff01;  --line-m2-ink: #12100f;
-  --line-m3: #fcff01;  --line-m3-ink: #12100f;
-  --line-m4: #0000ee;  --line-m4-ink: #ffffff;
-  --line-m5: #c876b1;  --line-m5-ink: #12100f;
-  --line-halo: rgba(8, 10, 12, 0.9);   /* mörk kontur runt linjemärken och linjer så de syns på ljust och mörkt */
-  --line-halo-width: 2px;
+  /* ---------- Linjefärger: VISNINGSFÄRG per linje (funkar på mörk och ljus karta) ---------- */
+  /* GTFS-färgen är källan (M1 ff0000, M2 73ff01, M3 fcff01, M4 0000ee, M5 c876b1). M4 är för mörk blå mot mörk karta
+     (1,9:1) och är ljusnad med behållen nyans till #4d7cff (4,9:1 mot kartan). Övriga är oförändrade. */
+  --line-m1: #ff0000;
+  --line-m2: #73ff01;
+  --line-m3: #fcff01;
+  --line-m4: #4d7cff;
+  --line-m5: #c876b1;
+  --line-ink: #0b0d10;         /* text på linjebrickor: ≥ 4,5:1 mot alla fem */
+  --line-halo: #0b0d10;        /* mörk kontur runt linjer på kartan */
 
   /* ---------- Kartfärger (bakgrundskartan; mörk standard) ---------- */
   --map-land: #12161b;
   --map-park: #151d1b;
   --map-water: #0e1d27;
-  --map-building: #1a2027;
-  --map-road-minor: #232a32;
-  --map-road-major: #2e3640;
+  --map-building: #181d23;
+  --map-road-minor: #1d232a;
+  --map-road-major: #2a323b;
   --map-road-casing: #0e1114;
-  --map-label: #c9c4b9;
+  --map-place: #7b776e;        /* ortnamn: dämpade, så att stationsnamnen är det tydligaste */
+  --map-station-label: #f2efe8;
   --map-label-halo: #0e1114;
-  --map-water-label: #7db3c3;
-  /* Kontur runt tågmarkörer: ljus på mörk karta (så att M4 blå syns), mörk på ljus karta */
-  --marker-outline: rgba(242, 239, 232, 0.92);
+  --map-water-label: #5f8896;
+  --marker-outline: #f2efe8;   /* ljus kontur runt tåg-prickar på mörk karta */
 
   /* ---------- Typografi: ett enda systemtypsnitt (SF Pro på iOS) ---------- */
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
-  --fs-xs: 0.75rem;    /* 12 px: minsta text, endast på panel */
-  --fs-sm: 0.875rem;   /* 14 */
-  --fs-md: 1rem;       /* 16 */
-  --fs-lg: 1.125rem;   /* 18 */
-  --fs-xl: 1.375rem;   /* 22 */
-  --fs-2xl: 1.75rem;   /* 28 */
-  --fs-num: 2.25rem;   /* 36: stora siffror (tid, avstånd) */
+  --fs-xs: 0.75rem;     /* 12 px */
+  --fs-sm: 0.875rem;    /* 14 */
+  --fs-md: 1rem;        /* 16 */
+  --fs-lg: 1.125rem;    /* 18 */
+  --fs-xl: 1.375rem;    /* 22 */
+  --fs-2xl: 1.75rem;    /* 28 */
+  --fs-num: 2rem;       /* 32: stora siffror (nedräkning) */
 
-  --fw-medium: 500;    /* lägsta vikt över kamerabild */
+  --fw-regular: 400;
+  --fw-medium: 500;
   --fw-semibold: 600;
   --fw-bold: 700;
-  --fw-heavy: 800;
 
-  --lh-tight: 1.1;
-  --lh-snug: 1.25;
-  --lh-normal: 1.45;
-  --tracking-caps: 0.08em;   /* versaler/småetiketter */
-  --tracking-tight: -0.01em;
+  --lh-tight: 1.15;
+  --lh-snug: 1.3;
+  --lh-normal: 1.5;
+  --tracking-caps: 0.06em;
   --num-features: "tnum" 1, "lnum" 1;  /* tabular-nums: använd klassen .num */
 
   /* ---------- Spacing (4 px-skala) ---------- */
-  --space-0: 0;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -95,49 +90,29 @@
   --space-6: 24px;
   --space-8: 32px;
   --space-10: 40px;
-  --space-12: 48px;
 
   /* ---------- Tryckytor och safe areas ---------- */
-  --tap-min: 44px;          /* minsta tryckyta */
-  --tap-comfort: 52px;      /* primära knappar */
+  --tap-min: 44px;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
-  --gutter: max(var(--space-4), var(--safe-left));  /* sidomarginal */
+  --gutter: max(var(--space-3), var(--safe-left));
+  --gutter-right: max(var(--space-3), var(--safe-right));
   --vh-full: 100vh;
-  --vh-full: 100dvh;        /* dynamisk höjd (Safari-adressfält); första raden är reserv */
+  --vh-full: 100dvh;           /* dynamisk höjd; första raden är reserv */
 
-  /* ---------- Radier ---------- */
-  --radius-xs: 6px;
-  --radius-sm: 10px;
-  --radius-md: 14px;        /* standardpanel */
-  --radius-lg: 20px;        /* sheets */
-  --radius-pill: 999px;
+  /* ---------- Radier (små, inga pillerformer) ---------- */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-badge: 22%;         /* linjebricka */
 
-  /* ---------- Duomo-motiv: formspråk ---------- */
-  /* Spetsbåge (lancett) för linjemärken/chips: 0–100 % av elementets ruta */
-  --clip-lancet: polygon(0 100%, 0 42%, 4% 26%, 15% 11%, 32% 3%, 50% 0, 68% 3%, 85% 11%, 96% 26%, 100% 42%, 100% 100%);
-  /* Grund gavelspets för sheets/toppkant: svagt spetsig mitt (cirka 10 px hög) */
-  --clip-gable: polygon(0 10px, 50% 0, 100% 10px, 100% 100%, 0 100%);
-  /* Subtil marmoråder över mörka paneler (lägg som bakgrund ovanpå --surface-*; max ~10 % opacitet) */
-  --marble-veil:
-    radial-gradient(120% 80% at 15% 0%, rgba(233, 211, 204, 0.1), transparent 60%),
-    radial-gradient(90% 70% at 100% 100%, rgba(233, 211, 204, 0.06), transparent 55%);
-  --strata-line: repeating-linear-gradient(to bottom, var(--hairline) 0 1px, transparent 1px 8px); /* djupmätarens ticks */
-
-  /* ---------- Skuggor och text-halo (läsbarhet över bilden) ---------- */
-  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.45), 0 4px 14px rgba(0, 0, 0, 0.32);
-  --shadow-2: 0 2px 4px rgba(0, 0, 0, 0.5), 0 10px 30px rgba(0, 0, 0, 0.42);
-  --shadow-inset: inset 0 1px 0 rgba(242, 239, 232, 0.08);
-  --text-halo: 0 1px 2px rgba(0, 0, 0, 0.85), 0 0 8px rgba(0, 0, 0, 0.55); /* text som ligger direkt på bilden */
-  --focus-ring: 0 0 0 3px var(--accent-soft), 0 0 0 1.5px var(--accent);
-  /* Valt tåg: vit ring med mörk ytterkant och glöd. Syns på både mörk och ljus bakgrund och krockar inte med någon linjefärg. */
-  --select-ring: 0 0 0 2px #ffffff, 0 0 0 4px rgba(8, 10, 12, 0.9), 0 0 16px 4px rgba(255, 255, 255, 0.5);
-
-  /* ---------- Glas ---------- */
-  --blur-panel: blur(18px) saturate(1.4);
-  --blur-strong: blur(28px) saturate(1.5);
+  /* ---------- Skugga och markering ---------- */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+  /* Valt tåg: vit ring med mörk ytterkant (ingen glöd). Syns på mörk och ljus bakgrund, krockar inte med någon linjefärg. */
+  --select-ring: 0 0 0 2px #ffffff, 0 0 0 3px #0b0d10;
 
   /* ---------- Z-index ---------- */
   --z-bg: 0;
@@ -153,43 +128,34 @@
   --z-modal: 80;
 
   /* ---------- Rörelse ---------- */
-  --dur-instant: 80ms;
-  --dur-fast: 140ms;
-  --dur-base: 220ms;
-  --dur-slow: 380ms;
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --dur-slow: 320ms;
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
-  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
-  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
 }
 
 /* ---------- Ljust läge (kartan följer systemet; AR-sidor har .force-dark) ---------- */
 @media (prefers-color-scheme: light) {
   :root:not(.force-dark) {
-    --bg: #f4f1ea;                          /* marmor/papper */
-    --surface-solid: #fbf9f4;
-    --surface-1: rgba(251, 249, 244, 0.8);
-    --surface-2: rgba(255, 253, 249, 0.9);
-    --surface-3: rgba(233, 228, 218, 0.95);
+    --bg: #f4f1ea;              /* marmor/papper */
+    --surface-1: #fbf9f4;
+    --surface-2: #ffffff;
+    --surface-3: #ece7dc;
     --scrim: rgba(20, 22, 26, 0.35);
-    --hairline: rgba(21, 24, 28, 0.14);
-    --hairline-strong: rgba(21, 24, 28, 0.3);
+    --hairline: #dcd6c9;
+    --hairline-strong: #c4bdae;
 
     --text: #15181c;
     --text-muted: #5b5750;
     --text-on-accent: #ffffff;
-    --text-on-gold: #2a1f08;
 
     --accent: #08766c;
     --accent-strong: #055a52;
-    --accent-soft: rgba(8, 118, 108, 0.14);
     --gold: #7a5c12;
-    --gold-soft: rgba(122, 92, 18, 0.16);
-    --marble-rose: #b88478;
 
     --success: #08766c;
     --warning: #8a5300;
     --danger: #b3261e;
-    --info: #2f4bd1;
 
     --map-land: #f4f1ea;
     --map-park: #e3e8dc;
@@ -198,46 +164,21 @@
     --map-road-minor: #fffdf9;
     --map-road-major: #ffffff;
     --map-road-casing: #d6d0c3;
-    --map-label: #3b3832;
+    --map-place: #8a857a;
+    --map-station-label: #15181c;
     --map-label-halo: #f4f1ea;
-    --map-water-label: #3f7a8c;
-    --marker-outline: rgba(8, 10, 12, 0.9);
+    --map-water-label: #5a8696;
+    --marker-outline: #0b0d10;
 
-    --shadow-1: 0 1px 2px rgba(20, 22, 26, 0.12), 0 4px 14px rgba(20, 22, 26, 0.1);
-    --shadow-2: 0 2px 4px rgba(20, 22, 26, 0.16), 0 10px 30px rgba(20, 22, 26, 0.16);
-    --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.7);
-    --text-halo: none;
-    --marble-veil:
-      radial-gradient(120% 80% at 15% 0%, rgba(233, 211, 204, 0.5), transparent 60%),
-      radial-gradient(90% 70% at 100% 100%, rgba(233, 211, 204, 0.3), transparent 55%);
+    --shadow-1: 0 1px 2px rgba(20, 22, 26, 0.18);
   }
 }
 
 /* ---------- Mindre rörelse ---------- */
 @media (prefers-reduced-motion: reduce) {
   :root {
-    --dur-instant: 0.01ms;
     --dur-fast: 0.01ms;
     --dur-base: 0.01ms;
     --dur-slow: 0.01ms;
   }
-}
-
-/* ---------- Minimala primitiver som tokens ofta behöver ---------- */
-.num {
-  font-variant-numeric: tabular-nums lining-nums;
-  font-feature-settings: var(--num-features);
-}
-
-/* Suddad panel över kamerabild. Faller tillbaka på en ogenomskinlig yta utan backdrop-filter. */
-.glass {
-  background: var(--surface-1);
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-1), var(--shadow-inset);
-  -webkit-backdrop-filter: var(--blur-panel);
-  backdrop-filter: var(--blur-panel);
-}
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .glass { background: var(--surface-solid); }
 }

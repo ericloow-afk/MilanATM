@@ -14,6 +14,8 @@ export default defineConfig({
   base: './',
   // MapLibres worker hittas inte om Vite förbundlar paketet i dev
   optimizeDeps: { exclude: ['maplibre-gl'] },
+  // Vitest: släpp igenom CSS-filer som importeras med ?raw (designtokens testas som text)
+  test: { css: { include: [/\.css(\?raw)?$/] } } as never,
   build: {
     rollupOptions: {
       input: {
