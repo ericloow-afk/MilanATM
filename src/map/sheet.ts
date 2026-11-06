@@ -3,9 +3,35 @@ export type SheetState = 'peek' | 'half' | 'full';
 
 const ORDER: SheetState[] = ['peek', 'half', 'full'];
 
-/** Synlig höjd i pixlar för varje läge (ren funktion; testbar). */
-export function sheetHeights(viewportH: number, safeBottom: number): Record<SheetState, number> {
-  return { peek: 120 + safeBottom, half: Math.round(viewportH * 0.44), full: Math.round(viewportH * 0.7) };
+/** Minimiläget visar bara handtaget (44 px) och rubrikraden (52 px). */
+export const PEEK_CONTENT_PX = 44 + 52;
+
+/**
+ * Synlig höjd i pixlar för varje läge (ren funktion; testbar).
+ * viewportH = den synliga höjden (visualViewport), bottomInset = safe area + det som Safaris verktygsfält täcker.
+ */
+export function sheetHeights(viewportH: number, bottomInset: number): Record<SheetState, number> {
+  return {
+    peek: PEEK_CONTENT_PX + bottomInset,
+    half: Math.round(viewportH * 0.44 + bottomInset),
+    full: Math.round(viewportH * 0.7 + bottomInset),
+  };
+}
+
+/** Hur mycket av layoutviewporten som döljs under den synliga ytan (t.ex. Safaris verktygsfält eller tangentbord). */
+export function bottomOverlap(innerHeight: number, vvHeight: number, vvOffsetTop: number): number {
+  return Math.max(0, Math.round(innerHeight - (vvOffsetTop + vvHeight)));
+}
+
+let safeProbe: HTMLElement | null = null;
+/** env(safe-area-inset-bottom) i pixlar, uppmätt med ett osynligt element (custom properties ger ibland bara texten "env(...)"). */
+function safeAreaBottomPx(): number {
+  if (!safeProbe) {
+    safeProbe = document.createElement('div');
+    safeProbe.style.cssText = 'position:fixed;left:0;bottom:0;width:0;height:0;visibility:hidden;pointer-events:none;padding-bottom:env(safe-area-inset-bottom,0px)';
+    document.body.append(safeProbe);
+  }
+  return parseFloat(getComputedStyle(safeProbe).paddingBottom) || 0;
 }
 
 /** Välj närmaste läge för en synlig höjd, med hänsyn till hastighet (px/ms, positiv = nedåt). */
@@ -37,13 +63,19 @@ export class BottomSheet {
     root.append(this.el);
     this.handle = this.el.querySelector('.sheet-handle') as HTMLButtonElement;
     this.body = this.el.querySelector('.sheet-body') as HTMLElement;
+    this.el.dataset.state = 'peek';
     this.heights = this.measure();
     this.apply(this.heights.peek, false);
     this.bind();
-    window.addEventListener('resize', () => {
+    const remeasure = () => {
       this.heights = this.measure();
       this.apply(this.heights[this._state], false);
-    });
+    };
+    window.addEventListener('resize', remeasure);
+    window.addEventListener('orientationchange', remeasure);
+    // Safaris verktygsfält krymper/växer när man scrollar eller trycker: följ den synliga ytan
+    window.visualViewport?.addEventListener('resize', remeasure);
+    window.visualViewport?.addEventListener('scroll', remeasure);
   }
 
   get state(): SheetState {
@@ -51,8 +83,12 @@ export class BottomSheet {
   }
 
   private measure(): Record<SheetState, number> {
-    const safe = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--safe-bottom')) || 0;
-    return sheetHeights(window.innerHeight, safe);
+    const vv = window.visualViewport;
+    const vvH = vv?.height ?? window.innerHeight;
+    const overlap = vv ? bottomOverlap(window.innerHeight, vv.height, vv.offsetTop) : 0;
+    const inset = safeAreaBottomPx() + overlap;
+    document.documentElement.style.setProperty('--sheet-inset', `${inset}px`);
+    return sheetHeights(vvH, inset);
   }
 
   private apply(visiblePx: number, animate: boolean): void {

@@ -1,7 +1,10 @@
 import 'maplibre-gl/dist/maplibre-gl.css';
 import '../styles/tokens.css';
 import './map.css';
-import { AttributionControl, LngLatBounds, Map as MapLibreMap, NavigationControl, type IControl, type Map as MlMap } from 'maplibre-gl';
+import { AttributionControl, LngLatBounds, Map as MapLibreMap, NavigationControl, setWorkerUrl, type IControl, type Map as MlMap } from 'maplibre-gl';
+// MapLibre letar efter sin worker bredvid sin egen fil. Vites produktionsbygge kopierar inte dit den (gav 404 på GitHub Pages,
+// så varken tiles eller våra linjer/stationer kunde ritas, bara DOM-markörerna). Importera den som egen fil och peka ut den.
+import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
 import { dataStatus, trains } from '../engine';
 import { romeDate, romeServiceTime } from '../engine/time';
 import type { MetroData, Train } from '../engine/types';
@@ -14,6 +17,9 @@ import { trainSchedule, validityInfo } from './schedule';
 import { BottomSheet } from './sheet';
 import { buildStyle, readMapPalette } from './style';
 import { findNextTrafficMs } from './traffic';
+
+setWorkerUrl(maplibreWorkerUrl);
+const BUILD_ID = typeof __BUILD_ID__ === 'string' ? __BUILD_ID__ : 'dev';
 
 const TICK_MS = 1000;
 const FRAME_MS = 33;
@@ -80,8 +86,8 @@ function announce(text: string): void {
 const topbar = el(
   'header',
   'topbar',
-  `<div class="badge-note glass" id="note">Positioner enligt tidtabell</div>
-   <div class="validity glass" id="validity" role="group" aria-label="Tidtabellens giltighet"></div>`,
+  `<button type="button" class="info-chip glass" id="info-chip" aria-expanded="false" aria-controls="info-panel"><i class="dot" aria-hidden="true"></i><span id="chip-text">Enligt tidtabell</span><span class="chev" aria-hidden="true"></span></button>
+   <div class="info-panel glass" id="info-panel" role="region" aria-label="Om tidtabellen" hidden></div>`,
 );
 const clockBox = el('div', 'clock');
 const clockPill = el('button', 'clock-pill glass', '', { type: 'button', 'aria-expanded': 'false', 'aria-controls': 'clock-panel' });
@@ -109,7 +115,60 @@ clockBox.append(clockPill, clockPanel);
 const notice = el('div', 'notice glass', '', { role: 'region', 'aria-label': 'Trafikinformation' });
 notice.hidden = true;
 
-app.append(topbar, clockBox, notice, toastEl, live);
+// ---------- synlig felbanner (ingen Safari-inspektör behövs) ----------
+const diag = el(
+  'div',
+  'diag glass',
+  `<div class="diag-head"><strong id="diag-title"></strong><button class="btn" type="button" data-diag-close aria-label="Stäng felmeddelandet">✕</button></div><ul id="diag-list"></ul>`,
+  { role: 'alert' },
+);
+diag.hidden = true;
+const diagMsgs: string[] = [];
+let diagBackground = false;
+let diagOverlay = false;
+type DiagKind = 'tiles' | 'glyphs' | 'style' | 'worker' | 'overlay' | 'js';
+const DIAG_LABEL: Record<DiagKind, string> = {
+  tiles: 'Tiles',
+  glyphs: 'Glyfer (kartetiketter)',
+  style: 'Stil',
+  worker: 'Kart-worker',
+  overlay: 'Linjer/stationer',
+  js: 'Skript',
+};
+function reportProblem(kind: DiagKind, message: string): void {
+  if (kind === 'tiles' || kind === 'worker' || kind === 'style') diagBackground = true;
+  if (kind === 'overlay' || kind === 'worker') diagOverlay = true;
+  const line = `${DIAG_LABEL[kind]}: ${message}`.slice(0, 220);
+  if (!diagMsgs.includes(line)) {
+    diagMsgs.push(line);
+    if (diagMsgs.length > 6) diagMsgs.shift();
+  }
+  (diag.querySelector('#diag-title') as HTMLElement).textContent = diagOverlay
+    ? 'Linjer och stationer kunde inte ritas'
+    : diagBackground
+      ? 'Kartbakgrunden kunde inte laddas'
+      : 'Kartan rapporterade ett fel';
+  (diag.querySelector('#diag-list') as HTMLElement).innerHTML = diagMsgs.map((x) => `<li>${esc(x)}</li>`).join('');
+  diag.hidden = false;
+}
+diag.querySelector('[data-diag-close]')!.addEventListener('click', () => (diag.hidden = true));
+window.addEventListener('error', (e) => reportProblem(/worker/i.test(String(e.message)) ? 'worker' : 'js', String(e.message || e.error)));
+window.addEventListener('unhandledrejection', (e) => reportProblem('js', String((e.reason as Error)?.message ?? e.reason)));
+
+/** Klassar MapLibres error-händelse: tiles, glyfer, stil, worker eller våra lager. */
+function classifyMapError(ev: { sourceId?: string; error?: { message?: string; url?: string; status?: number } }): [DiagKind, string] {
+  const msg = ev.error?.message ?? 'okänt fel';
+  const url = ev.error?.url ?? '';
+  const status = ev.error?.status ? `, HTTP ${ev.error.status}` : '';
+  const where = url ? ` (${url.replace(/^https?:\/\//, '').slice(0, 80)}${status})` : '';
+  if (/worker/i.test(msg)) return ['worker', msg];
+  if (/\/fonts\//.test(url)) return ['glyphs', msg + where];
+  if (ev.sourceId === 'openmaptiles' || /tiles\.openfreemap\.org/.test(url)) return ['tiles', msg + where];
+  if (ev.sourceId?.startsWith('metro-')) return ['overlay', msg];
+  return ['style', msg + where];
+}
+
+app.append(topbar, clockBox, notice, diag, toastEl, live);
 
 // ---------- klocka ----------
 function clockChanged(): void {
@@ -170,13 +229,35 @@ function renderValidity(nowMs: number): void {
       : v.status === 'expired'
         ? { cls: 'bad', text: 'har gått ut' }
         : { cls: 'bad', text: 'gäller inte än' };
-  const html = `<span class="label">Tidtabell gäller</span><b class="num">${fmtDate(v.from)} – ${fmtDate(v.to)}</b><span class="chip ${status.cls}"><i class="dot"></i>${status.text}</span>`;
-  const box = topbar.querySelector('#validity') as HTMLElement;
-  if (box.dataset.h !== html) {
-    box.dataset.h = html;
-    box.innerHTML = html;
+  const shortTo = fmtDate(v.to).replace(/\s?\d{4}$/, '');
+  const chipText =
+    v.status === 'ok' ? (status.cls === 'warn' ? `Enligt tidtabell · ${status.text}` : `Enligt tidtabell · t.o.m. ${shortTo}`) : `Tidtabellen ${status.text}`;
+  const chip = topbar.querySelector('#info-chip') as HTMLElement;
+  if (chip.dataset.h !== chipText + status.cls) {
+    chip.dataset.h = chipText + status.cls;
+    chip.className = `info-chip glass ${status.cls}`;
+    (chip.querySelector('#chip-text') as HTMLElement).textContent = chipText;
+    chip.setAttribute('aria-label', `Positioner enligt tidtabell. Tidtabellen gäller ${fmtDate(v.from)} till ${fmtDate(v.to)}, ${status.text}. Visa detaljer`);
+  }
+  const html = `<p><b>Positioner enligt tidtabell</b>, inte realtid. Förseningar och störningar syns inte.</p>
+    <dl><dt>Tidtabell gäller</dt><dd class="num">${fmtDate(v.from)} – ${fmtDate(v.to)}</dd>
+    <dt>Status</dt><dd><span class="chip ${status.cls}"><i class="dot"></i>${status.text}</span></dd>
+    <dt>Källa</dt><dd>Comune di Milano / ATM (CC BY 4.0)</dd>
+    <dt>Bygge</dt><dd class="num">${esc(BUILD_ID)}</dd></dl>`;
+  const panel = topbar.querySelector('#info-panel') as HTMLElement;
+  if (panel.dataset.h !== html) {
+    panel.dataset.h = html;
+    panel.innerHTML = html;
   }
 }
+function toggleInfo(open?: boolean): void {
+  const chip = topbar.querySelector('#info-chip') as HTMLElement;
+  const panel = topbar.querySelector('#info-panel') as HTMLElement;
+  const next = open ?? panel.hidden;
+  panel.hidden = !next;
+  chip.setAttribute('aria-expanded', String(next));
+}
+topbar.querySelector('#info-chip')!.addEventListener('click', () => toggleInfo());
 
 function renderNotice(nowMs: number): void {
   const status = dataStatus(data, new Date(nowMs));
@@ -352,7 +433,11 @@ function flyTo(lat: number, lon: number): void {
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
-    if (!clockPanel.hidden) {
+    const info = topbar.querySelector('#info-panel') as HTMLElement;
+    if (!info.hidden) {
+      toggleInfo(false);
+      (topbar.querySelector('#info-chip') as HTMLElement).focus();
+    } else if (!clockPanel.hidden) {
       clockPanel.hidden = true;
       clockPill.setAttribute('aria-expanded', 'false');
       clockPill.focus();
@@ -491,16 +576,34 @@ async function start(): Promise<void> {
     new AttributionControl({ compact: true, customAttribution: 'Tidtabell: <a href="https://dati.comune.milano.it/" target="_blank" rel="noopener">Comune di Milano / ATM</a> (CC BY 4.0)' }),
     'bottom-left',
   );
-  let tileErrorShown = false;
   map.on('error', (e) => {
-    const ev = e as { sourceId?: string; error?: { message?: string } };
+    const ev = e as { sourceId?: string; error?: { message?: string; url?: string; status?: number } };
     console.warn('[map]', ev.sourceId ?? '', ev.error?.message ?? e);
-    if (ev.sourceId === 'openmaptiles' && !tileErrorShown) {
-      tileErrorShown = true;
-      toast('Kartbilden kunde inte laddas (offline?). Linjer och tåg visas ändå.');
-    }
+    const [kind, msg] = classifyMapError(ev);
+    reportProblem(kind, msg);
   });
-  map.on('style.load', () => addOverlays(map, data));
+  // Våra lager läggs till så snart stilen finns, oberoende av om OpenFreeMaps tiles har laddat.
+  const ensureOverlays = () => {
+    try {
+      addOverlays(map, data);
+    } catch (err) {
+      reportProblem('overlay', err instanceof Error ? err.message : String(err));
+    }
+  };
+  map.on('style.load', ensureOverlays);
+  if (map.isStyleLoaded()) ensureOverlays();
+  // Vakthund: säg till om lagren eller bakgrunden fortfarande saknas efter en stund
+  window.setTimeout(() => {
+    const loaded = (id: string) => {
+      try {
+        return map.isSourceLoaded(id);
+      } catch {
+        return false;
+      }
+    };
+    if (!loaded('metro-lines') || !loaded('metro-stations')) reportProblem('overlay', 'har inte ritats efter 12 s (kart-workern laddade troligen inte).');
+    if (!loaded('openmaptiles')) reportProblem('tiles', 'inga bakgrundstiles har laddats efter 12 s (offline eller blockerat?).');
+  }, 12_000);
   // Markörerna skalas ned vid låg zoom så att de inte täcker kartan; siffran döljs när de blir små
   const mapEl = document.getElementById('map') as HTMLElement;
   const syncZoom = () => {

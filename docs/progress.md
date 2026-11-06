@@ -135,3 +135,11 @@ Dev-länken (`https://172.x.x.x:5174`) funkar bara på samma nät. Utomhus anvä
 - Tillgänglighet: skip-länk, aria-label på alla kontroller och markörer, fokus flyttas till panelens rubrik vid val och tillbaka vid stängning (Esc), tåg nås via tåglistan, `prefers-reduced-motion` (ingen pulsering, ingen kamerasvep, ingen mjuk interpolation).
 - Tester: klocka, animation, schema/nedräkning/giltighet, GeoJSON, trafik, panelens lägen. 175 tester gröna, `tsc` ren, `npm run build` ok.
 - Verifierat i webbläsarpanelen (desktop och 375×812, mörkt och ljust): kartan renderar, tåg på linjerna, val av tåg och panel, nattläge, utgången tidtabell. **Ej verifierat på iPhone** (touch-drag av panelen, safe areas, prestanda med ~120 markörer, GPS). Ren http på localhost för desktop-test: `$env:NO_SSL="1"; npx vite --port 5180`, öppna `http://localhost:5180/map.html`.
+
+### D1-fix efter iPhone-test (2026-11-06)
+- **Orsak till tom karta på GitHub Pages:** Vites produktionsbygge kopierade inte MapLibres worker (`assets/maplibre-gl-worker.mjs` gav 404). Utan worker ritas varken tiles eller vår GeoJSON, bara DOM-markörerna. Åtgärd: workern importeras med `?url` och pekas ut med `setWorkerUrl` i `src/map/main.ts`; bygget innehåller nu `assets/maplibre-gl-worker-<hash>.mjs`. Verifierat med `vite preview` av produktionsbygget (lokalt), inte på Pages/iPhone än.
+- Linjer/stationer läggs till vid `style.load` (och direkt om stilen redan är laddad), oberoende av tiles. Synlig felbanner för MapLibres error-händelser (tiles, glyfer, stil, worker, våra lager, JS-fel) med rubriken "Kartbakgrunden kunde inte laddas" vid tile-fel, plus vakthund efter 12 s.
+- Bottenpanelens minimiläge visar bara handtag + rubrik; höjderna räknas från `visualViewport` + uppmätt safe area, och uppdateras när Safaris verktygsfält ändrar höjd.
+- "Positioner enligt tidtabell" och giltigheten är nu en tryckbar chip som fäller ut detaljer (giltighet, status, källa, bygge).
+- Tågprickar har ljus kontur på mörk karta (`--marker-outline`), mörk på ljus.
+- 179 tester gröna, bygget ok.

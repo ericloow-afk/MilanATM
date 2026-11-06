@@ -15,6 +15,7 @@ export interface UserFix {
 let lastUser: UserFix | null = null;
 
 export function addOverlays(map: MlMap, data: MetroData): void {
+  if (map.getSource('metro-lines')) return; // redan tillagda för den här stilen
   const p = readMapPalette();
   const color = lineColorExpression(data, 'line') as never;
   const halo = cssVar('--line-halo', 'rgba(8,10,12,.9)');

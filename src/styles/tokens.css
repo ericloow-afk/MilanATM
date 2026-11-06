@@ -58,6 +58,8 @@
   --map-label: #c9c4b9;
   --map-label-halo: #0e1114;
   --map-water-label: #7db3c3;
+  /* Kontur runt tågmarkörer: ljus på mörk karta (så att M4 blå syns), mörk på ljus karta */
+  --marker-outline: rgba(242, 239, 232, 0.92);
 
   /* ---------- Typografi: ett enda systemtypsnitt (SF Pro på iOS) ---------- */
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, "Segoe UI", Roboto, sans-serif;
@@ -199,6 +201,7 @@
     --map-label: #3b3832;
     --map-label-halo: #f4f1ea;
     --map-water-label: #3f7a8c;
+    --marker-outline: rgba(8, 10, 12, 0.9);
 
     --shadow-1: 0 1px 2px rgba(20, 22, 26, 0.12), 0 4px 14px rgba(20, 22, 26, 0.1);
     --shadow-2: 0 2px 4px rgba(20, 22, 26, 0.16), 0 10px 30px rgba(20, 22, 26, 0.16);
