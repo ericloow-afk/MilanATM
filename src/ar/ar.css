@@ -35,7 +35,6 @@ html, body { height: 100%; overflow: hidden; touch-action: none; }
 /* ---------- Verktygsfält (höger) ---------- */
 #toolbar { position: fixed; top: calc(var(--safe-top) + var(--space-2)); right: var(--gutter-right); z-index: var(--z-toolbar); display: flex; flex-direction: column; gap: var(--space-2); align-items: stretch; width: 128px; }
 #toolbar .btn { background: var(--surface-1); }
-#toolbar .btn.ghost { background: var(--surface-1); color: var(--text-muted); border-color: var(--hairline); }
 .tools { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2); }
 .tools .btn { min-height: var(--tap-min); padding: 0 var(--space-2); }
 .rec-note { font-size: var(--fs-xs); }

@@ -56,6 +56,9 @@ const h = (html: string): HTMLElement => {
   return t.content.firstElementChild as HTMLElement;
 };
 
+/** Avstånd (px) mellan en kantindikator och skärmkanten. */
+export const EDGE_INSET = 8;
+
 const ICON_CLOSE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 
 export class ArUi {
@@ -70,7 +73,7 @@ export class ArUi {
   readonly toolbar = h(`<div id="toolbar">
       <button type="button" class="btn" id="b-cal">Kalibrera</button>
       <button type="button" class="btn" id="b-src">Simulator</button>
-      <button type="button" class="btn ghost" id="b-tools" aria-expanded="false" aria-controls="tools">Verktyg</button>
+      <button type="button" class="btn" id="b-tools" aria-expanded="false" aria-controls="tools">Verktyg</button>
       <div class="tools panel" id="tools" hidden>
         <button type="button" class="btn" id="b-rec">Spela in 30 s</button>
         <button type="button" class="btn" id="b-mark" disabled>Markera</button>
@@ -321,7 +324,6 @@ export class ArUi {
       }
       el.classList.toggle('arrow', !it.onScreen);
       el.classList.toggle('sel', it.id === this.selected);
-      el.style.transform = `translate(${it.x.toFixed(1)}px, ${it.y.toFixed(1)}px) translate(-50%, -50%)`;
       const html = it.onScreen
         ? `${lineBadge(it.line, it.lineLabel, 'sm')}<span class="lbl-text"><span class="lbl-title">${esc(it.title)}</span><span class="lbl-dist num">${esc(it.dist)}</span></span>`
         : `<span class="tri" style="transform:rotate(${it.angleRad.toFixed(3)}rad)" aria-hidden="true"></span>${lineBadge(it.line, it.lineLabel, 'sm')}<span class="lbl-dist num">${esc(it.dist)}</span>`;
@@ -329,6 +331,16 @@ export class ArUi {
         el.dataset.h = html;
         el.innerHTML = html;
       }
+      // Kantindikatorer hålls 8 px innanför skärmkanten (hela etiketten, inte bara dess mittpunkt)
+      let x = it.x;
+      let y = it.y;
+      if (!it.onScreen) {
+        const w = el.offsetWidth;
+        const h = el.offsetHeight;
+        x = Math.min(Math.max(x, EDGE_INSET + w / 2), this.canvas.clientWidth - EDGE_INSET - w / 2);
+        y = Math.min(Math.max(y, EDGE_INSET + h / 2), this.canvas.clientHeight - EDGE_INSET - h / 2);
+      }
+      el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -50%)`;
     }
     for (const [id, el] of this.labelEls) {
       if (!keep.has(id)) {
