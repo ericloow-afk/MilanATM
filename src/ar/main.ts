@@ -1,3 +1,6 @@
+import '../styles/tokens.css';
+import '../styles/components.css';
+import './ar.css';
 import { dataStatus, trains, type MetroData } from '../engine';
 import { isoToYmd, romeDate, romeServiceTime } from '../engine/time';
 import { depthFor } from '../depth';
@@ -10,9 +13,12 @@ import { ArScene } from './scene';
 import { RealSource } from './sensors';
 import { SimSource, type SimPlace } from './sim';
 import type { SensorSource, SourceReading } from './source';
-import { ArUi, type LabelItem } from './ui';
+import { ArUi, type HudState, type LabelItem } from './ui';
+import { fmtDate, fmtDist, fmtHMS } from '../map/format';
+import { lineLabel } from '../ui/line-badge';
 
 const BUILD_ID = typeof __BUILD_ID__ === 'string' ? __BUILD_ID__ : 'dev';
+const DEBUG = new URLSearchParams(location.search).get('debug') === '1';
 const RADIUS_M = 300;
 const MANUAL_KEY = 'ar.manualDeg';
 
@@ -29,7 +35,6 @@ let nearby: NearbyTrain[] = [];
 let userPos: { lat: number; lon: number } | null = null;
 let lastReadingNow = new Date();
 let gpsAccuracy: number | null = null;
-let statusText = '';
 let lastReading: SourceReading | null = null;
 let trainsInView = 0;
 const recorder = new LogRecorder(30_000, 200);
@@ -62,15 +67,13 @@ const recLabel = () =>
   recorder.active ? `Spelar… ${recorder.remainingSec(Date.now())} s (${recorder.rowCount})` : `Spela in 30 s${recorder.rowCount ? ` (${recorder.rowCount} rader)` : ''}`;
 
 // ---------- hjälpare ----------
-const fmtRome = (d: Date) => {
-  const { sec } = romeServiceTime(d);
-  const p = (n: number) => String(Math.floor(n)).padStart(2, '0');
-  return `${p(sec / 3600)}:${p((sec % 3600) / 60)}:${p(sec % 60)}`;
-};
+const fmtRome = (d: Date) => fmtHMS(romeServiceTime(d).sec);
 const stopName = (id: string) => metro?.stops.find((s) => s.id === id)?.name ?? id;
 const dirName = (id: string) => metro?.directions.find((d) => d.id === id)?.name ?? id;
-const lineColor = (id: string) => metro?.lines.find((l) => l.id === id)?.color ?? '#ffffff';
-const lineName = (id: string) => `M${metro?.lines.find((l) => l.id === id)?.name ?? id}`;
+/** Visningsfärg per linje ur tokens (M4 är ljusnad mot GTFS-färgen så att den syns). */
+const lineColor = (id: string) =>
+  getComputedStyle(document.documentElement).getPropertyValue(`--line-m${id.replace(/^M/, '')}`).trim() || (metro?.lines.find((l) => l.id === id)?.color ?? '#ffffff');
+const lineName = (id: string) => lineLabel(id, metro?.lines.find((l) => l.id === id)?.name);
 
 try {
   const saved = Number(localStorage.getItem(MANUAL_KEY));
@@ -123,7 +126,8 @@ const ui: ArUi = new ArUi(uiRoot, canvas, {
     const ymd = romeServiceTime(sim.time).ymd;
     sim.setTime(romeDate(ymd, kind === 'noon' ? 12 * 3600 : kind === 'evening' ? 18 * 3600 : 30 * 60));
   },
-});
+}, DEBUG);
+ui.setMode(null);
 ui.onTap = (x, y) => {
   const rect = canvas.getBoundingClientRect();
   let best: { id: string; d: number } | null = null;
@@ -170,7 +174,7 @@ function setSource(next: SensorSource): void {
   source = next;
   nearby = [];
   scene.setTrains([], lineColor, () => 0);
-  ui.setSourceButton(next.kind);
+  ui.setMode(next.kind);
   ui.hideStart();
   video.hidden = next.kind !== 'real';
   bg.hidden = next.kind === 'real';
@@ -191,7 +195,6 @@ async function startReal(): Promise<void> {
   const real = new RealSource();
   const starting = real.start(video); // anropas synkront från klicket
   setSource(real);
-  ui.unbindSim();
   await starting;
 }
 
@@ -264,11 +267,12 @@ function updateOverlay(haveOrientation: boolean): void {
     if (!v) continue;
     const e = edgeIndicator(v.x, v.y, v.behind, W, H, 44);
     if (!e.onScreen && ++arrows > 6) continue;
-    const text = `<b>${lineName(n.train.line)}</b> → ${dirName(n.train.direction)}<br>${Math.round(n.distance)} m`;
     items.push({
       id: n.train.id,
-      text: e.onScreen ? text : `<b>${lineName(n.train.line)}</b> ${Math.round(n.distance)} m`,
-      color: lineColor(n.train.line),
+      line: n.train.line,
+      lineLabel: lineName(n.train.line),
+      title: `mot ${dirName(n.train.direction)}`,
+      dist: fmtDist(n.distance),
       onScreen: e.onScreen,
       x: e.x,
       y: e.onScreen ? e.y - 30 : e.y,
@@ -288,54 +292,57 @@ function updateOverlay(haveOrientation: boolean): void {
       const t = n.train;
       const d = depthFor(t.line);
       ui.showInfo({
-        title: `${lineName(t.line)} mot ${dirName(t.direction)}`,
-        color: lineColor(t.line),
+        line: t.line,
+        lineLabel: lineName(t.line),
+        title: `mot ${dirName(t.direction)}`,
         lines: [
           t.status === 'dwelling' ? `Står vid ${stopName(t.fromStation)}` : `${stopName(t.fromStation)} → ${stopName(t.toStation)} (${Math.round(t.progress * 100)} %)`,
-          `Avstånd ${Math.round(n.distance)} m, bäring ${Math.round(n.bearingDeg)}°, ${Math.round(t.speedMps * 3.6)} km/h`,
-          `Djup ≈ ${d.meters} m (uppskattat, inte researchat)`,
-          `Enligt tidtabell, inte realtid${t.shapeQuality === 'coarse' ? ' · ungefärlig position (grov spårgeometri)' : ''}`,
+          `Avstånd ${fmtDist(n.distance)}, ${Math.round(t.speedMps * 3.6)} km/h`,
+          `Djup ca ${d.meters} m (uppskattat)`,
+          `Enligt tidtabell, inte realtid${t.shapeQuality === 'coarse' ? '. Ungefärlig position (grov spårgeometri).' : '.'}`,
         ],
       });
     }
   }
 
-  // HUD
+  // HUD: en kort rad; tekniken ligger i den utfällbara raden (öppen i ?debug=1)
   const status = dataStatus(metro, lastReadingNow);
-  const cs = filter.compassState;
-  const compassText =
-    {
-      ok: 'ok',
-      uncalibrated: 'OKALIBRERAD (ignoreras)',
-      inaccurate: 'för osäker (ignoreras)',
-      'looking-up': 'tittar uppåt (ignoreras)',
-      moving: 'snabb vridning (ignoreras)',
-      jump: 'språng avvisat',
-      none: 'saknas',
-    }[cs];
-  const accText = gpsAccuracy == null ? 'väntar på GPS…' : `±${Math.round(gpsAccuracy)} m ${gpsAccuracy <= 15 ? '●' : gpsAccuracy <= 30 ? '◐' : '○'}`;
-  statusText = [
-    `källa: ${source.kind === 'real' ? 'sensorer' : 'SIMULATOR'}   GPS ${accText}`,
-    `kompass: ${compassText}  fel ${filter.headingError.toFixed(1)}°  manuell ${filter.manualDeg.toFixed(1)}°`,
-    `tåg ≤${RADIUS_M} m: ${nearby.length}   tid (Rom): ${fmtRome(lastReadingNow)}`,
-    `data: ${status} (t.o.m. ${metro.meta.validTo})`,
-    `djup ≈ ${depthFor('M1').meters} m (uppskattat) · enligt tidtabell`,
-    `bygge: ${BUILD_ID}`,
-  ].join('\n');
-  ui.setHud(statusText);
+  const compassText = {
+    ok: 'ok',
+    uncalibrated: 'okalibrerad (ignoreras)',
+    inaccurate: 'för osäker (ignoreras)',
+    'looking-up': 'tittar uppåt (ignoreras)',
+    moving: 'snabb vridning (ignoreras)',
+    jump: 'språng avvisat',
+    none: 'saknas',
+  }[filter.compassState];
+  const statusText = status === 'ok' ? 'giltig' : status === 'expired' ? 'har gått ut' : 'gäller inte än';
+  const hud: HudState = {
+    summary: nearby.length === 0 ? `Inga tåg inom ${RADIUS_M} m` : `${nearby.length} tåg inom ${RADIUS_M} m`,
+    details: [
+      ['Källa', source.kind === 'real' ? 'sensorer' : 'simulator'],
+      ['GPS', gpsAccuracy == null ? 'väntar på position' : `±${Math.round(gpsAccuracy)} m`],
+      ['Kompass', `${compassText}, fel ${filter.headingError.toFixed(1)}°, manuell ${filter.manualDeg.toFixed(1)}°`],
+      ['Tid (Rom)', fmtRome(lastReadingNow)],
+      ['Tidtabell', `${statusText}, till ${fmtDate(metro.meta.validTo)}`],
+      ['Djup', `ca ${depthFor('M1').meters} m (uppskattat)`],
+      ['Bygge', BUILD_ID],
+    ],
+  };
+  ui.setHud(hud);
   ui.setCalibrationReadout(`Manuell offset ${filter.manualDeg.toFixed(1)}°, yaw ${filter.yawDeg.toFixed(1)}°`);
   ui.setErrors(source.errors);
   if (source.kind === 'sim') ui.syncSim(source as SimSource, fmtRome((source as SimSource).time));
 
   ui.setBanner(
     status === 'expired'
-      ? `Tidtabellen har gått ut (gällde t.o.m. ${metro.meta.validTo}). Inga tåg visas.`
+      ? `Tidtabellen har gått ut (gällde till ${fmtDate(metro.meta.validTo)}). Inga tåg visas.`
       : status === 'notYetValid'
-        ? `Tidtabellen gäller först från ${metro.meta.validFrom}. Inga tåg visas.`
+        ? `Tidtabellen gäller först från ${fmtDate(metro.meta.validFrom)}. Inga tåg visas.`
         : !userPos
-          ? 'Väntar på position (GPS)…'
+          ? 'Väntar på position (GPS).'
           : !haveOrientation
-            ? 'Väntar på orientering (tillstånd för rörelse/orientering?)'
+            ? 'Väntar på orientering. Ge tillstånd för rörelse och orientering.'
             : null,
   );
 }

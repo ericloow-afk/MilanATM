@@ -1,0 +1,78 @@
+/* AR-vyn. Värden från src/styles/tokens.css, delade komponenter från src/styles/components.css. */
+html, body { height: 100%; overflow: hidden; touch-action: none; }
+#bg { position: fixed; inset: 0; background: var(--bg); background-image: linear-gradient(var(--hairline) 1px, transparent 1px), linear-gradient(90deg, var(--hairline) 1px, transparent 1px); background-size: 48px 48px; }
+#cam { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: var(--z-video); }
+#gl { position: fixed; inset: 0; width: 100%; height: 100%; touch-action: none; z-index: var(--z-canvas); }
+#ui { --ar-bottom: 0px; position: fixed; inset: 0; pointer-events: none; z-index: var(--z-labels); }
+#ui > * { pointer-events: auto; }
+#ui > #labels { pointer-events: none; }
+
+/* ---------- Etiketter och kantpilar (ligger under paneler) ---------- */
+#labels { position: fixed; inset: 0; overflow: hidden; z-index: var(--z-labels); }
+.label { position: absolute; left: 0; top: 0; pointer-events: auto; display: flex; align-items: center; gap: 6px; padding: 4px 8px 4px 4px; background: var(--surface-1); border: 1px solid var(--hairline-strong); border-radius: var(--radius-sm); color: var(--text); font-size: var(--fs-xs); line-height: 1.2; white-space: nowrap; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.label.sel { box-shadow: var(--select-ring); }
+.lbl-text { display: flex; flex-direction: column; }
+.lbl-title { font-weight: var(--fw-semibold); }
+.lbl-dist { color: var(--text-muted); }
+.label.arrow { padding: 4px 8px 4px 6px; }
+.tri { flex: none; width: 0; height: 0; border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-left: 8px solid var(--text); }
+
+/* ---------- HUD: en rad, tekniken fälls ut ---------- */
+#hudbox { position: fixed; top: calc(var(--safe-top) + var(--space-2)); left: var(--gutter); width: calc(100vw - 128px - var(--space-2) - var(--gutter) - var(--gutter-right)); z-index: var(--z-hud); display: flex; flex-direction: column; gap: var(--space-2); align-items: flex-start; }
+#hudbox > * { max-width: 100%; box-sizing: border-box; }
+.hud-row { box-sizing: border-box; min-height: var(--tap-min); display: inline-flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-3); color: var(--text); font-size: var(--fs-sm); font-weight: var(--fw-semibold); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.hud-row #hud-text { white-space: nowrap; }
+.chev { flex: none; width: 7px; height: 7px; border-right: 1.5px solid var(--text-muted); border-bottom: 1.5px solid var(--text-muted); transform: translateY(-2px) rotate(45deg); }
+[aria-expanded="true"] > .chev { transform: translateY(2px) rotate(-135deg); }
+.hud-details { margin: 0; padding: var(--space-2) var(--space-3); font-size: var(--fs-xs); width: 100%; }
+.hud-details > div { display: grid; grid-template-columns: 6em 1fr; gap: var(--space-2); padding: 2px 0; }
+.hud-details dt { color: var(--text-muted); }
+.hud-details dd { margin: 0; overflow-wrap: anywhere; }
+.errors { margin: 0; padding: var(--space-2) var(--space-3); font: var(--fs-xs) / 1.35 var(--font-mono); color: var(--danger); white-space: pre-wrap; overflow-wrap: anywhere; width: 100%; border-left: 3px solid var(--danger); }
+#banner { padding: var(--space-2) var(--space-3); font-size: var(--fs-sm); line-height: var(--lh-snug); border-left: 3px solid var(--warning); }
+#banner[hidden], #info[hidden], #cal[hidden] { display: none; }
+
+/* ---------- Verktygsfält (höger) ---------- */
+#toolbar { position: fixed; top: calc(var(--safe-top) + var(--space-2)); right: var(--gutter-right); z-index: var(--z-toolbar); display: flex; flex-direction: column; gap: var(--space-2); align-items: stretch; width: 128px; }
+#toolbar .btn { background: var(--surface-1); }
+#toolbar .btn.ghost { background: var(--surface-1); color: var(--text-muted); border-color: var(--hairline); }
+.tools { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2); }
+.tools .btn { min-height: var(--tap-min); padding: 0 var(--space-2); }
+.rec-note { font-size: var(--fs-xs); }
+.rec-note:empty { display: none; }
+#csv { width: 100%; box-sizing: border-box; height: 90px; font: 10px var(--font-mono); background: var(--surface-2); color: var(--text); border: 1px solid var(--hairline-strong); border-radius: var(--radius-sm); }
+#csv[hidden] { display: none; }
+
+/* ---------- Info och kalibrering: ligger ovanför simulatorns handtag ---------- */
+#info { position: fixed; left: var(--gutter); right: var(--gutter-right); bottom: calc(var(--ar-bottom) + var(--safe-bottom) + var(--space-2)); z-index: var(--z-panel); padding: var(--space-3); max-width: 520px; margin-inline: auto; font-size: var(--fs-sm); }
+#info p { margin: var(--space-2) 0 0; color: var(--text-muted); line-height: var(--lh-normal); }
+.info-head { display: flex; align-items: center; gap: var(--space-3); }
+.info-head strong { flex: 1; min-width: 0; font-size: var(--fs-md); }
+.cal { position: fixed; left: var(--gutter); right: var(--gutter-right); bottom: calc(var(--ar-bottom) + var(--safe-bottom) + var(--space-2)); z-index: calc(var(--z-panel) + 1); padding: var(--space-3) var(--space-4); max-width: 520px; margin-inline: auto; display: flex; flex-direction: column; gap: var(--space-2); font-size: var(--fs-sm); }
+.cal p { margin: 0; }
+.row2 { display: flex; gap: var(--space-2); }
+.row2 .btn { flex: 1; }
+
+/* ---------- Startvy ---------- */
+#start { position: fixed; inset: 0; z-index: var(--z-modal); background: var(--bg); display: flex; align-items: center; justify-content: center; padding: var(--gutter) var(--gutter-right); box-sizing: border-box; }
+#start[hidden] { display: none; }
+.start-inner { width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: var(--space-3); }
+.wordmark { color: var(--gold); font-size: var(--fs-xl); font-weight: var(--fw-bold); letter-spacing: -0.01em; }
+#start p { margin: 0 0 var(--space-2); line-height: var(--lh-normal); }
+#start p.small { margin: var(--space-2) 0 0; font-size: var(--fs-xs); }
+#start .btn { width: 100%; min-height: 52px; font-size: var(--fs-md); }
+
+/* ---------- Simulator: nedfällbar bottenpanel, stängd som standard ---------- */
+#simsheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: var(--z-sheet); border-radius: var(--radius-lg) var(--radius-lg) 0 0; border-bottom: 0; max-width: 560px; margin-inline: auto; padding-bottom: var(--safe-bottom); }
+#simsheet[hidden] { display: none; }
+.sim-handle { box-sizing: border-box; width: 100%; min-height: 52px; display: flex; align-items: center; justify-content: center; gap: var(--space-2); position: relative; padding: 0 var(--space-4); background: none; border: 0; color: var(--text); font-size: var(--fs-sm); font-weight: var(--fw-semibold); cursor: pointer; }
+.grip-bar { position: absolute; top: 6px; left: 50%; width: 36px; height: 4px; margin-left: -18px; border-radius: 2px; background: var(--hairline-strong); }
+.sim-body { max-height: min(48dvh, 440px); overflow: auto; overscroll-behavior: contain; padding: 0 var(--space-4) var(--space-4); display: flex; flex-direction: column; gap: var(--space-2); }
+.sim-body[hidden] { display: none; }
+.ctl { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-sm); }
+.ctl-row { display: flex; justify-content: space-between; gap: var(--space-3); color: var(--text-muted); }
+.ctl-row .num { color: var(--text); }
+.chips { display: flex; gap: var(--space-2); overflow-x: auto; padding-bottom: 2px; -webkit-overflow-scrolling: touch; }
+.chip-btn { flex: none; padding: 0 var(--space-3); }
+.chip-btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.small { font-size: var(--fs-xs); margin: 0; }
