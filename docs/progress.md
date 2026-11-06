@@ -4,9 +4,9 @@
 
 | Punkt | Status |
 |---|---|
-| 1. ATM-probe (`docs/atm-probe.md`) | Ej gjord |
+| 1. ATM-probe (`docs/atm-probe.md`) | Väntar: användaren kör skriptet och klistrar in resultatet |
 | 2. Sensortest-sida (kamera + GPS + kompass) | **Byggd, ej verifierad på iPhone** |
-| 3. GTFS-validering | Ej gjord |
+| 3. GTFS-validering | **Gjord 2026-11-06**, se `docs/gtfs-notes.md` (`tools/inspect-gtfs.mjs`). Viktigast: feeden gäller bara till 2026-11-30, `calendar.txt` är tom, `direction_id` är tom |
 
 Klart-kriterium för punkt 2: sensortestet visar heading och GPS på din telefon över HTTPS. Det kan bara bekräftas av dig; fyll i checklistan nedan.
 
@@ -77,3 +77,16 @@ Dev-länken (`https://172.x.x.x:5174`) funkar bara på samma nät. Utomhus anvä
 - [ ] `webkitCompassHeading` ändras när jag vrider mig; pekar rätt mot norr (±): ___°
 - [ ] alpha/beta/gamma ändras vid lutning
 - [ ] iOS-version: ___
+
+## Fas 1 – Data (byggd 2026-11-06, väntar på din jämförelse mot ATM:s app)
+- `npm run build:data` (= `node tools/build-metro.mjs data/raw/gtfs.zip`) skriver `public/metro.json` (277 KB, gzip 49 KB) och `docs/metro-build-report.md`. `stop_times.txt` strömmas; hela filen hålls aldrig i minnet.
+- Schema: lines, stops (id + rensat visningsnamn), directions (terminus), shapeGeoms + shapes (deduplicerade), patterns (stoppföljd, `sd`, `a` ankomst, `w` uppehåll, `shapeQuality`), services (add/remove per datum), trips `[mönster, tjänst, startsek]`.
+- Test: `npm test` (29 st) inkl. förlustfri återskapning av alla 7884 metro-trips stop_times mot originalfilen (0 skillnader).
+- Nästa avgångar: `npm run next -- --line M2 --stop Garibaldi [--date 2026-11-06 --time 12:00]`.
+- **Klart-kriterium (ej uppfyllt förrän du jämfört):** "nästa 5 avgångar på M2 från Garibaldi" stämmer mot ATM:s app.
+
+## Fas 2 – TrainEngine (byggd 2026-11-06)
+- `src/geo` (haversine, bearing, shapeIndex/pointAlong, distanceToPolyline) och `src/engine` (`trains(data, at)`, `dataStatus`, `romeServiceTime`). Ren TS, samma plana projektion som `tools/lib/project.mjs`.
+- Tester: 79 gröna totalt (geo 9, motor 36 inkl. 3 mot verkliga metro.json, hastighetsrapport 5, Fas 1-tester 20, övriga 9).
+- Hastighetsrapport: `node tools/segment-speeds.mjs` → `docs/segment-speed-report.md`. 0 segment över 25 m/s eller under 1 m/s; median 7,7 m/s, min 2,8 (M2 Caiazzo → Loreto), max 16,3 (M4 Repetti → Linate).
+- Känd begränsning: Rom-väggklocka för tjänstedygn (ingen exakt GTFS-hantering av dagar med sommartidsskifte; ingen sådan dag i feeden).
