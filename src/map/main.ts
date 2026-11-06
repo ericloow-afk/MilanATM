@@ -1,5 +1,6 @@
 import 'maplibre-gl/dist/maplibre-gl.css';
 import '../styles/tokens.css';
+import '../styles/components.css';
 import './map.css';
 import { AttributionControl, LngLatBounds, Map as MapLibreMap, NavigationControl, setWorkerUrl, type IControl, type Map as MlMap } from 'maplibre-gl';
 // MapLibre letar efter sin worker bredvid sin egen fil. Vites produktionsbygge kopierar inte dit den (gav 404 på GitHub Pages,
@@ -9,7 +10,10 @@ import { activeTrips, dataStatus, positionAt, type TripRun } from '../engine';
 import { romeDate, romeServiceTime } from '../engine/time';
 import type { MetroData, Train } from '../engine/types';
 import { haversine } from '../geo';
+import { TopBar, type BarAction } from './bar';
 import { MapClock } from './clock';
+import { esc, fmtCount, fmtDate, fmtDist, fmtHM } from './format';
+import { lineBadge } from '../ui/line-badge';
 import { TrainMarkers } from './markers';
 import { addOverlays, setUserFix } from './overlays';
 import { trainSchedule, validityInfo } from './schedule';
@@ -24,12 +28,6 @@ const TICK_MS = 1000;
 /** Kontinuerlig väggklocka i epoch-ms (sub-ms upplösning, hoppar inte som Date.now() kan göra). */
 const wallNow = () => performance.timeOrigin + performance.now();
 const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
-const pad = (n: number) => String(Math.floor(n)).padStart(2, '0');
-const fmtClock = (sec: number) => `${pad(sec / 3600)}:${pad((sec % 3600) / 60)}:${pad(sec % 60)}`;
-const fmtCount = (sec: number) => `${Math.floor(sec / 60)}:${pad(sec % 60)}`;
-const fmtDist = (m: number) => (m < 950 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1).replace('.', ',')} km`);
-const fmtDate = (iso: string) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('sv-SE', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 
 const app = document.getElementById('app') as HTMLElement;
 
@@ -68,7 +66,7 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, html = '
   return e;
 }
 const live = el('div', 'sr', '', { 'aria-live': 'polite', role: 'status' });
-const toastEl = el('div', 'toast glass', '', { role: 'status', 'aria-live': 'polite' });
+const toastEl = el('div', 'toast panel', '', { role: 'status', 'aria-live': 'polite' });
 toastEl.hidden = true;
 let toastTimer = 0;
 function toast(text: string): void {
@@ -82,42 +80,17 @@ function announce(text: string): void {
   setTimeout(() => (live.textContent = text), 50);
 }
 
-const topbar = el(
-  'header',
-  'topbar',
-  `<button type="button" class="info-chip glass" id="info-chip" aria-expanded="false" aria-controls="info-panel"><i class="dot" aria-hidden="true"></i><span id="chip-text">Enligt tidtabell</span><span class="chev" aria-hidden="true"></span></button>
-   <div class="info-panel glass" id="info-panel" role="region" aria-label="Om tidtabellen" hidden></div>`,
-);
-const clockBox = el('div', 'clock');
-const clockPill = el('button', 'clock-pill glass', '', { type: 'button', 'aria-expanded': 'false', 'aria-controls': 'clock-panel' });
-const clockPanel = el(
-  'div',
-  'clock-panel glass',
-  `<div class="row">
-     <button class="btn primary" type="button" data-act="live">Live</button>
-     <button class="btn" type="button" data-act="pause" aria-label="Pausa eller fortsätt klockan">⏯</button>
-     <button class="btn" type="button" data-scale="1">×1</button>
-     <button class="btn" type="button" data-scale="10">×10</button>
-     <button class="btn" type="button" data-scale="60">×60</button>
-   </div>
-   <div class="row">
-     <button class="btn" type="button" data-time="12:00">12:00</button>
-     <button class="btn" type="button" data-time="18:00">18:00</button>
-     <button class="btn" type="button" data-time="00:30">00:30</button>
-   </div>
-   <label>Datum <input type="date" id="clock-date"></label>
-   <label>Tid (Rom) <input type="time" id="clock-time" step="60"></label>`,
-  { id: 'clock-panel', role: 'group', 'aria-label': 'Klockkontroller' },
-);
-clockPanel.hidden = true;
-clockBox.append(clockPill, clockPanel);
-const notice = el('div', 'notice glass', '', { role: 'region', 'aria-label': 'Trafikinformation' });
+const bar = new TopBar({
+  onAction: (a) => handleBarAction(a),
+  onLongPress: () => togglePerf(),
+});
+const notice = el('div', 'notice panel', '', { role: 'region', 'aria-label': 'Trafikinformation' });
 notice.hidden = true;
 
 // ---------- synlig felbanner (ingen Safari-inspektör behövs) ----------
 const diag = el(
   'div',
-  'diag glass',
+  'diag panel',
   `<div class="diag-head"><strong id="diag-title"></strong><button class="btn" type="button" data-diag-close aria-label="Stäng felmeddelandet">✕</button></div><ul id="diag-list"></ul>`,
   { role: 'alert' },
 );
@@ -167,117 +140,44 @@ function classifyMapError(ev: { sourceId?: string; error?: { message?: string; u
   return ['style', msg + where];
 }
 
-app.append(topbar, clockBox, notice, diag, toastEl, live);
+app.append(bar.el, notice, diag, toastEl, live);
 
-// ---------- klocka ----------
+// ---------- klocka och toppfält ----------
 function clockChanged(): void {
   lastTick = -Infinity;
   nextTraffic = null;
 }
-function setClockRome(hhmm: string, dayOf?: Date): void {
-  const [h, m] = hhmm.split(':').map(Number);
-  const { ymd } = romeServiceTime(dayOf ?? clock.now(Date.now()));
-  clock.setTime(romeDate(ymd, h * 3600 + m * 60), Date.now());
-  clockChanged();
-}
-let longPressTimer = 0;
-let longPressed = false;
-clockPill.addEventListener('pointerdown', () => {
-  longPressed = false;
-  longPressTimer = window.setTimeout(() => {
-    longPressed = true;
-    togglePerf();
-  }, 650);
-});
-for (const ev of ['pointerup', 'pointerleave', 'pointercancel'] as const) clockPill.addEventListener(ev, () => clearTimeout(longPressTimer));
-clockPill.addEventListener('contextmenu', (e) => e.preventDefault());
-clockPill.addEventListener('click', (e) => {
-  if (longPressed) {
-    longPressed = false;
-    e.preventDefault();
-    return;
-  }
-  clockPanel.hidden = !clockPanel.hidden;
-  clockPill.setAttribute('aria-expanded', String(!clockPanel.hidden));
-});
-clockPanel.addEventListener('click', (e) => {
-  const b = (e.target as HTMLElement).closest('button');
-  if (!b) return;
+function handleBarAction(a: BarAction): void {
   const wall = Date.now();
-  if (b.dataset.act === 'live') clock.goLive(wall);
-  else if (b.dataset.act === 'pause') (clock.paused ? clock.resume(wall) : clock.pause(wall));
-  else if (b.dataset.scale) clock.setScale(Number(b.dataset.scale), wall);
-  else if (b.dataset.time) setClockRome(b.dataset.time);
-  clockChanged();
-});
-const timeInput = clockPanel.querySelector('#clock-time') as HTMLInputElement;
-const dateInput = clockPanel.querySelector('#clock-date') as HTMLInputElement;
-function applyDateTimeInputs(): void {
-  const cur = romeServiceTime(clock.now(Date.now()));
-  const ymd = dateInput.value ? Number(dateInput.value.replaceAll('-', '')) : cur.ymd;
-  const [h, mi] = (timeInput.value || fmtClock(cur.sec).slice(0, 5)).split(':').map(Number);
-  clock.setTime(romeDate(ymd, h * 3600 + mi * 60), Date.now());
+  if (a.type === 'live') clock.goLive(wall);
+  else if (a.type === 'pause') (clock.paused ? clock.resume(wall) : clock.pause(wall));
+  else if (a.type === 'scale') clock.setScale(a.scale, wall);
+  else if (a.type === 'time') {
+    const [h, m] = a.hhmm.split(':').map(Number);
+    clock.setTime(romeDate(romeServiceTime(clock.now(wall)).ymd, h * 3600 + m * 60), wall);
+  } else {
+    const cur = romeServiceTime(clock.now(wall));
+    const ymd = a.date ? Number(a.date.replaceAll('-', '')) : cur.ymd;
+    const [h, mi] = (a.time || fmtHM(cur.sec)).split(':').map(Number);
+    clock.setTime(romeDate(ymd, h * 3600 + mi * 60), wall);
+  }
   clockChanged();
 }
-timeInput.addEventListener('change', applyDateTimeInputs);
-dateInput.addEventListener('change', applyDateTimeInputs);
-function renderClock(nowMs: number): void {
-  const { sec } = romeServiceTime(new Date(nowMs));
-  const mode = clock.isLive ? '<span class="mode">LIVE</span>' : `<span class="mode sim">${clock.paused ? 'PAUS' : `SPOLAD ×${clock.scale}`}</span>`;
-  const html = `<span class="num">${fmtClock(sec)}</span>${mode}`;
-  if (clockPill.dataset.h !== html) {
-    clockPill.dataset.h = html;
-    clockPill.innerHTML = html;
-    clockPill.setAttribute('aria-label', `Klocka ${fmtClock(sec)} Romtid, ${clock.isLive ? 'live' : clock.paused ? 'pausad' : `spolad ×${clock.scale}`}. Öppna klockkontroller`);
-  }
+function renderBar(nowMs: number): void {
+  bar.render({
+    sec: romeServiceTime(new Date(nowMs)).sec,
+    clock: { isLive: clock.isLive, paused: clock.paused, scale: clock.scale },
+    validity: validityInfo(data, new Date(nowMs)),
+    build: BUILD_ID,
+  });
 }
 
-// ---------- giltighet, banners och tomma lägen ----------
-function renderValidity(nowMs: number): void {
-  const v = validityInfo(data, new Date(nowMs));
-  const status =
-    v.status === 'ok'
-      ? v.daysLeft <= 7
-        ? { cls: 'warn', text: v.daysLeft === 0 ? 'går ut idag' : `går ut om ${v.daysLeft} ${v.daysLeft === 1 ? 'dag' : 'dagar'}` }
-        : { cls: '', text: `giltig · ${v.daysLeft} dagar kvar` }
-      : v.status === 'expired'
-        ? { cls: 'bad', text: 'har gått ut' }
-        : { cls: 'bad', text: 'gäller inte än' };
-  const shortTo = fmtDate(v.to).replace(/\s?\d{4}$/, '');
-  const chipText =
-    v.status === 'ok' ? (status.cls === 'warn' ? `Enligt tidtabell · ${status.text}` : `Enligt tidtabell · t.o.m. ${shortTo}`) : `Tidtabellen ${status.text}`;
-  const chip = topbar.querySelector('#info-chip') as HTMLElement;
-  if (chip.dataset.h !== chipText + status.cls) {
-    chip.dataset.h = chipText + status.cls;
-    chip.className = `info-chip glass ${status.cls}`;
-    (chip.querySelector('#chip-text') as HTMLElement).textContent = chipText;
-    chip.setAttribute('aria-label', `Positioner enligt tidtabell. Tidtabellen gäller ${fmtDate(v.from)} till ${fmtDate(v.to)}, ${status.text}. Visa detaljer`);
-  }
-  const html = `<p><b>Positioner enligt tidtabell</b>, inte realtid. Förseningar och störningar syns inte.</p>
-    <dl><dt>Tidtabell gäller</dt><dd class="num">${fmtDate(v.from)} – ${fmtDate(v.to)}</dd>
-    <dt>Status</dt><dd><span class="chip ${status.cls}"><i class="dot"></i>${status.text}</span></dd>
-    <dt>Källa</dt><dd>Comune di Milano / ATM (CC BY 4.0)</dd>
-    <dt>Bygge</dt><dd class="num">${esc(BUILD_ID)}</dd></dl>`;
-  const panel = topbar.querySelector('#info-panel') as HTMLElement;
-  if (panel.dataset.h !== html) {
-    panel.dataset.h = html;
-    panel.innerHTML = html;
-  }
-}
-function toggleInfo(open?: boolean): void {
-  const chip = topbar.querySelector('#info-chip') as HTMLElement;
-  const panel = topbar.querySelector('#info-panel') as HTMLElement;
-  const next = open ?? panel.hidden;
-  panel.hidden = !next;
-  chip.setAttribute('aria-expanded', String(next));
-}
-topbar.querySelector('#info-chip')!.addEventListener('click', () => toggleInfo());
-
+// ---------- banners och tomma lägen ----------
 function renderNotice(nowMs: number): void {
   const status = dataStatus(data, new Date(nowMs));
   let key = 'none';
   let html = '';
-  let cls = 'notice glass';
+  let cls = 'notice panel';
   if (status !== 'ok') {
     key = status;
     cls += ' bad';
@@ -292,7 +192,7 @@ function renderNotice(nowMs: number): void {
     if (nextTraffic.ms != null) {
       const { sec } = romeServiceTime(new Date(nextTraffic.ms));
       key = `night-${Math.floor(sec / 60)}`;
-      html = `<h2>Ingen trafik just nu</h2><p>Nästa tåg enligt tidtabell går ca ${fmtClock(sec).slice(0, 5)} (Romtid).</p><button class="btn primary" type="button" data-fix="next">Spola till första tåget</button>`;
+      html = `<h2>Ingen trafik just nu</h2><p>Nästa tåg enligt tidtabell går ca ${fmtHM(sec)} (Romtid).</p><button class="btn primary" type="button" data-fix="next">Spola till första tåget</button>`;
     } else {
       key = 'none-ahead';
       html = `<h2>Ingen trafik hittades</h2><p>Inga tåg inom de närmaste 26 timmarna enligt tidtabellen.</p>`;
@@ -349,7 +249,7 @@ function renderList(): void {
     .slice(0, 12);
   const key = `list:${arr.map((x) => x.t.id).join(',')}`;
   if (sheetMode === 'list' && key === sheetKey) {
-    // uppdatera bara avstånd
+    // uppdatera bara avstånd och antal
     sheet.body.querySelectorAll<HTMLElement>('[data-d]').forEach((n, i) => (n.textContent = fmtDist(arr[i].d)));
     (sheet.body.querySelector('[data-n]') as HTMLElement).textContent = String(curTrains.size);
     return;
@@ -359,12 +259,12 @@ function renderList(): void {
   const rows = arr
     .map(
       ({ t, d }) =>
-        `<li><button type="button" data-id="${esc(t.id)}" aria-label="${esc(describe(t))}"><span class="line-badge l-${esc(t.line)}">${esc(lineName(t.line))}</span><span class="t">mot ${esc(dirName(t.direction))}<br><small class="d">${t.status === 'dwelling' ? 'står vid ' + esc(stopName(t.fromStation)) : esc(stopName(t.fromStation)) + ' → ' + esc(stopName(t.toStation))}</small></span><span class="d num" data-d>${fmtDist(d)}</span></button></li>`,
+        `<li><button type="button" class="row" data-id="${esc(t.id)}" aria-label="${esc(describe(t))}">${lineBadge(t.line, lineName(t.line), 'md')}<span class="row-text"><span class="row-title">mot ${esc(dirName(t.direction))}</span><span class="row-sub">${t.status === 'dwelling' ? 'står vid ' + esc(stopName(t.fromStation)) : esc(stopName(t.fromStation)) + ' → ' + esc(stopName(t.toStation))}</span></span><span class="row-dist num" data-d>${fmtDist(d)}</span></button></li>`,
     )
     .join('');
-  sheet.body.innerHTML = `<div class="summary"><strong><span data-n class="num">${curTrains.size}</span> tåg i trafik</strong><span>${userFix ? 'närmast dig' : 'närmast kartans mitt'}</span></div>
-    ${arr.length ? `<ul class="list" aria-label="Tåg i närheten">${rows}</ul>` : '<p class="footnote">Inga tåg kör just nu. Använd klockan uppe till höger för att spola tiden.</p>'}
-    <p class="footnote">Positioner beräknas enligt tidtabell, inte realtid. Tidtabell: Comune di Milano / ATM (CC BY 4.0).</p>`;
+  sheet.body.innerHTML = `<div class="summary"><strong><span data-n class="num">${curTrains.size}</span> tåg</strong><span class="muted">${userFix ? 'närmast dig' : 'närmast kartans mitt'}</span></div>
+    ${arr.length ? `<ul class="list" aria-label="Tåg i närheten">${rows}</ul>` : '<p class="footnote">Inga tåg kör just nu. Använd klockan överst för att välja en annan tid.</p>'}
+    <p class="footnote">Positionerna är beräknade ur tidtabellen, inte realtid. Tidtabell: Comune di Milano / ATM (CC BY 4.0).</p>`;
 }
 
 function renderTrain(t: Train): void {
@@ -377,14 +277,14 @@ function renderTrain(t: Train): void {
     sheetKey = key;
     const ends = `<span>${esc(sch.stops[0].name)}</span><span>${esc(sch.terminusName)}</span>`;
     sheet.body.innerHTML = `<div class="head l-${esc(t.line)}">
-        <span class="line-badge">${esc(lineName(t.line))}</span>
-        <div class="titles"><h2 id="sel-title" tabindex="-1">mot ${esc(sch.terminusName)}</h2><div class="sub" data-f="status"></div></div>
-        <button class="btn close" type="button" aria-label="Avmarkera tåg" data-close>✕</button>
+        ${lineBadge(t.line, lineName(t.line), 'md')}
+        <div class="titles"><h2 id="sel-title" tabindex="-1">mot ${esc(sch.terminusName)}</h2><div class="sub muted" data-f="status"></div></div>
+        <button class="btn icon ghost close" type="button" aria-label="Avmarkera tåg" data-close><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
       </div>
       <div class="next"><div><div class="k" data-f="nextlabel">Nästa station</div><div class="v" data-f="next"></div></div><div class="count num" data-f="count" role="timer" aria-live="off"></div></div>
       <div class="route l-${esc(t.line)}" role="img" aria-label="Framsteg längs sträckan">
-        <div class="bar"><div class="fill"></div>${sch.stops.map((s) => `<i class="tick" style="left:${(s.f * 100).toFixed(2)}%"></i>`).join('')}<div class="train"></div></div>
-        <div class="ends">${ends}</div>
+        <div class="track"><div class="fill"></div>${sch.stops.map((s) => `<i class="tick" style="left:${(s.f * 100).toFixed(2)}%"></i>`).join('')}<div class="train"></div></div>
+        <div class="ends muted">${ends}</div>
       </div>
       <dl class="facts"><dt>Station</dt><dd class="num" data-f="stopn"></dd><dt>Avstånd till dig</dt><dd class="num" data-f="dist"></dd></dl>
       <p class="footnote">Enligt tidtabell, inte realtid.${t.shapeQuality === 'coarse' ? ' Ungefärlig position (grov spårgeometri).' : ''}</p>`;
@@ -398,7 +298,7 @@ function renderTrain(t: Train): void {
     sch.atTerminus
       ? `Framme vid ändstationen ${sch.fromName}`
       : t.status === 'dwelling'
-        ? `Står vid ${sch.fromName}${sch.secondsToDeparture != null ? ` · avgår om ${fmtCount(Math.round(sch.secondsToDeparture))}` : ''}`
+        ? `Står vid ${sch.fromName}${sch.secondsToDeparture != null ? `, avgår om ${fmtCount(Math.round(sch.secondsToDeparture))}` : ''}`
         : `På väg från ${sch.fromName}`,
   );
   set('nextlabel', t.status === 'dwelling' ? 'Nästa station efter avgång' : 'Nästa station');
@@ -454,14 +354,9 @@ function flyTo(lat: number, lon: number): void {
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
-    const info = topbar.querySelector('#info-panel') as HTMLElement;
-    if (!info.hidden) {
-      toggleInfo(false);
-      (topbar.querySelector('#info-chip') as HTMLElement).focus();
-    } else if (!clockPanel.hidden) {
-      clockPanel.hidden = true;
-      clockPill.setAttribute('aria-expanded', 'false');
-      clockPill.focus();
+    if (bar.isOpen) {
+      bar.toggle(false);
+      bar.focusButton();
     } else if (selectedId) select(null, {});
   }
 });
@@ -481,8 +376,8 @@ class FabControl implements IControl {
 }
 const ICON_LOCATE = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="7.5"/></svg>';
 const ICON_LIST = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1"/><circle cx="3.5" cy="12" r="1"/><circle cx="3.5" cy="18" r="1"/></svg>';
-const locateBtn = el('button', 'btn fab', ICON_LOCATE, { type: 'button', 'aria-label': 'Visa min position' });
-const listBtn = el('button', 'btn fab', ICON_LIST, { type: 'button', 'aria-label': 'Visa tåglistan' });
+const locateBtn = el('button', 'btn icon', ICON_LOCATE, { type: 'button', 'aria-label': 'Visa min position' });
+const listBtn = el('button', 'btn icon', ICON_LIST, { type: 'button', 'aria-label': 'Visa tåglistan' });
 
 function locate(): void {
   if (!('geolocation' in navigator)) return toast('Den här enheten saknar platstjänster. Kartan fungerar ändå.');
@@ -555,8 +450,7 @@ function frame(rafTs: number): void {
     markers.update(list, selectedId);
   }
   if (tick) {
-    renderClock(nowMs);
-    renderValidity(nowMs);
+    renderBar(nowMs);
     renderNotice(nowMs);
     renderSheet();
   }
@@ -565,7 +459,7 @@ function frame(rafTs: number): void {
 }
 
 // ---------- dold FPS-/JS-mätare (långtryck på klockan, eller ?perf=1) ----------
-const perfEl = el('pre', 'perf glass', '', { 'aria-live': 'off' });
+const perfEl = el('pre', 'perf panel', '', { 'aria-live': 'off' });
 perfEl.hidden = new URLSearchParams(location.search).get('perf') !== '1';
 perfEl.textContent = 'mäter…';
 app.append(perfEl);
@@ -667,15 +561,23 @@ async function start(): Promise<void> {
     if (!loaded('metro-lines') || !loaded('metro-stations')) reportProblem('overlay', 'har inte ritats efter 12 s (kart-workern laddade troligen inte).');
     if (!loaded('openmaptiles')) reportProblem('tiles', 'inga bakgrundstiles har laddats efter 12 s (offline eller blockerat?).');
   }, 12_000);
-  // Markörerna skalas ned vid låg zoom så att de inte täcker kartan; siffran döljs när de blir små
+  // Markörer: små prickar under zoom 13, linjebricka med riktningspil från zoom 13
   const mapEl = document.getElementById('map') as HTMLElement;
   const syncZoom = () => {
     const z = map.getZoom();
-    mapEl.style.setProperty('--tm-s', Math.min(1, Math.max(0.45, (z - 9) / 4.5)).toFixed(2));
-    mapEl.classList.toggle('lowzoom', z < 12);
+    mapEl.classList.toggle('z-low', z < 12);
+    mapEl.classList.toggle('z-mid', z >= 12 && z < 13);
+    mapEl.classList.toggle('z-badge', z >= 13);
   };
   map.on('zoom', syncZoom);
   syncZoom();
+  // Attributionen är kompakt (ⓘ) på smala skärmar när kartan har ritats första gången; den går alltid att öppna
+  map.once('idle', () => {
+    if (window.innerWidth >= 600) return;
+    const a = document.querySelector('.maplibregl-ctrl-attrib');
+    a?.removeAttribute('open');
+    a?.classList.remove('maplibregl-compact-show');
+  });
   const bounds = data.stops.reduce((b, s) => b.extend([s.lon, s.lat]), new LngLatBounds([data.stops[0].lon, data.stops[0].lat], [data.stops[0].lon, data.stops[0].lat]));
   map.fitBounds(bounds, { padding: { top: 150, bottom: 170, left: 24, right: 24 }, animate: false });
   matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => map.setStyle(buildStyle(readMapPalette())));

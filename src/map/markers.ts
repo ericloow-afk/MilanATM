@@ -1,5 +1,6 @@
-/** Tågmarkörer (DOM) på kartan: linjebricka, riktning, pulserande ring vid uppehåll, vit ring när valt. */
+/** Tågmarkörer (DOM) på kartan: liten prick vid låg zoom, LineBadge med riktningspil från zoom 13, vit ring när valt. */
 import { Marker, type Map as MlMap } from 'maplibre-gl';
+import { lineBadge } from '../ui/line-badge';
 import type { Train } from '../engine/types';
 
 interface Entry {
@@ -30,7 +31,7 @@ export class TrainMarkers {
     el.type = 'button';
     el.className = 'tm';
     el.tabIndex = -1; // tågen nås via tåglistan med tangentbord; vald markör får tabIndex 0
-    el.innerHTML = `<span class="tm-pulse" aria-hidden="true"></span><span class="tm-dir" aria-hidden="true"><i></i></span><span class="tm-badge">${this.hooks.lineLabel(t.line)}</span>`;
+    el.innerHTML = `<span class="tm-dir" aria-hidden="true"><i></i></span><span class="tm-dot" aria-hidden="true"></span>${lineBadge(t.line, this.hooks.lineLabel(t.line), 'sm', 'tm-badge')}`;
     el.addEventListener('click', (e) => {
       e.stopPropagation();
       this.hooks.onSelect(t.id);

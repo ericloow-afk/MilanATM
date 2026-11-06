@@ -7,19 +7,19 @@ import type { StyleSpecification, LayerSpecification } from 'maplibre-gl';
 export interface MapPalette {
   land: string; park: string; water: string; building: string;
   roadMinor: string; roadMajor: string; roadCasing: string;
-  label: string; labelHalo: string; waterLabel: string;
+  label: string; labelHalo: string; waterLabel: string; place: string; stationLabel: string;
 }
 
 const FALLBACK_DARK: MapPalette = {
   land: '#12161b', park: '#151d1b', water: '#0e1d27', building: '#1a2027',
   roadMinor: '#232a32', roadMajor: '#2e3640', roadCasing: '#0e1114',
-  label: '#c9c4b9', labelHalo: '#0e1114', waterLabel: '#7db3c3',
+  label: '#7b776e', labelHalo: '#0e1114', waterLabel: '#5f8896', place: '#7b776e', stationLabel: '#f2efe8',
 };
 
 const VAR: Record<keyof MapPalette, string> = {
   land: '--map-land', park: '--map-park', water: '--map-water', building: '--map-building',
   roadMinor: '--map-road-minor', roadMajor: '--map-road-major', roadCasing: '--map-road-casing',
-  label: '--map-label', labelHalo: '--map-label-halo', waterLabel: '--map-water-label',
+  label: '--map-place', labelHalo: '--map-label-halo', waterLabel: '--map-water-label', place: '--map-place', stationLabel: '--map-station-label',
 };
 
 /** Läser kartfärgerna ur CSS-variablerna (följer prefers-color-scheme). */
@@ -86,19 +86,19 @@ export function buildStyle(p: MapPalette): StyleSpecification {
       id: 'road-label', type: 'symbol', source: SRC, 'source-layer': 'transportation_name', minzoom: 14,
       filter: ['match', ['get', 'class'], ['primary', 'secondary', 'tertiary', 'trunk', 'minor'], true, false] as never,
       layout: { 'symbol-placement': 'line', 'text-field': name as never, 'text-font': ['Noto Sans Regular'], 'text-size': 12 },
-      paint: { 'text-color': p.label, 'text-opacity': 0.8, 'text-halo-color': p.labelHalo, 'text-halo-width': 1.4 },
+      paint: { 'text-color': p.place, 'text-opacity': 0.8, 'text-halo-color': p.labelHalo, 'text-halo-width': 1.2 },
     },
     {
       id: 'place-suburb', type: 'symbol', source: SRC, 'source-layer': 'place', minzoom: 11.5,
       filter: ['match', ['get', 'class'], ['suburb', 'quarter', 'neighbourhood'], true, false] as never,
-      layout: { 'text-field': name as never, 'text-font': ['Noto Sans Regular'], 'text-size': ['interpolate', ['linear'], ['zoom'], 11.5, 11, 15, 13], 'text-transform': 'uppercase', 'text-letter-spacing': 0.1, 'text-max-width': 8 },
-      paint: { 'text-color': p.label, 'text-opacity': 0.65, 'text-halo-color': p.labelHalo, 'text-halo-width': 1.2 },
+      layout: { 'text-field': name as never, 'text-font': ['Noto Sans Regular'], 'text-size': ['interpolate', ['linear'], ['zoom'], 11.5, 9, 15, 11], 'text-transform': 'uppercase', 'text-letter-spacing': 0.1, 'text-max-width': 8 },
+      paint: { 'text-color': p.place, 'text-opacity': 0.8, 'text-halo-color': p.labelHalo, 'text-halo-width': 1.2 },
     },
     {
       id: 'place-city', type: 'symbol', source: SRC, 'source-layer': 'place', minzoom: 5,
       filter: ['match', ['get', 'class'], ['city', 'town', 'village'], true, false] as never,
-      layout: { 'text-field': name as never, 'text-font': ['Noto Sans Bold'], 'text-size': ['interpolate', ['linear'], ['zoom'], 5, 11, 11, 17], 'text-max-width': 8 },
-      paint: { 'text-color': p.label, 'text-halo-color': p.labelHalo, 'text-halo-width': 1.6 },
+      layout: { 'text-field': name as never, 'text-font': ['Noto Sans Regular'], 'text-size': ['interpolate', ['linear'], ['zoom'], 5, 9, 11, 12], 'text-max-width': 8 },
+      paint: { 'text-color': p.place, 'text-halo-color': p.labelHalo, 'text-halo-width': 1.4 },
     },
   ];
   return {

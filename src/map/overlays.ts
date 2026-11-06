@@ -18,7 +18,7 @@ export function addOverlays(map: MlMap, data: MetroData): void {
   if (map.getSource('metro-lines')) return; // redan tillagda för den här stilen
   const p = readMapPalette();
   const color = lineColorExpression(data, 'line') as never;
-  const halo = cssVar('--line-halo', 'rgba(8,10,12,.9)');
+  const halo = cssVar('--line-halo', '#0b0d10');
   const accent = cssVar('--accent', '#3dd6c6');
 
   map.addSource('metro-lines', { type: 'geojson', data: lineCollection(data) as never });
@@ -48,7 +48,7 @@ export function addOverlays(map: MlMap, data: MetroData): void {
     id: 'stations', type: 'circle', source: 'metro-stations', minzoom: 10,
     paint: {
       'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, ['case', ['get', 'multi'], 2.6, 1.6], 12, ['case', ['get', 'multi'], 4.4, 2.8], 14, ['case', ['get', 'multi'], 7, 5], 16, ['case', ['get', 'multi'], 10, 8]] as never,
-      'circle-color': ['case', ['get', 'multi'], cssVar('--text', '#f2efe8'), p.land] as never,
+      'circle-color': ['case', ['get', 'multi'], p.stationLabel, p.land] as never,
       'circle-stroke-color': ['case', ['get', 'multi'], halo, color] as never,
       'circle-stroke-width': ['interpolate', ['linear'], ['zoom'], 10, 1, 14, 2.6] as never,
     },
@@ -63,7 +63,7 @@ export function addOverlays(map: MlMap, data: MetroData): void {
     'text-optional': true,
   };
   const labelPaint = (from: number) => ({
-    'text-color': p.label,
+    'text-color': p.stationLabel,
     'text-halo-color': p.labelHalo,
     'text-halo-width': 1.8,
     // Namnen tonar in vid zoom

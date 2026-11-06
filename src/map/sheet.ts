@@ -56,10 +56,10 @@ export class BottomSheet {
     private reducedMotion: () => boolean,
   ) {
     this.el = document.createElement('section');
-    this.el.className = 'sheet glass';
+    this.el.className = 'sheet';
     this.el.setAttribute('role', 'region');
     this.el.setAttribute('aria-label', 'Tåg på kartan');
-    this.el.innerHTML = `<button type="button" class="sheet-handle" aria-label="Ändra panelens höjd" aria-expanded="false"><span aria-hidden="true"></span></button><div class="sheet-body"></div>`;
+    this.el.innerHTML = `<button type="button" class="grip sheet-handle" aria-label="Ändra panelens höjd" aria-expanded="false"><span aria-hidden="true"></span></button><div class="sheet-body"></div>`;
     root.append(this.el);
     this.handle = this.el.querySelector('.sheet-handle') as HTMLButtonElement;
     this.body = this.el.querySelector('.sheet-body') as HTMLElement;
