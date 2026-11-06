@@ -37,7 +37,9 @@ html, body { height: 100%; overflow: hidden; }
 .maplibregl-ctrl-bottom-right { right: var(--gutter-right); display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-2); }
 .maplibregl-ctrl-bottom-right .maplibregl-ctrl { margin: 0; float: none; }
 .maplibregl-ctrl-bottom-left { left: var(--gutter); max-width: calc(100vw - 96px); }
-.stack { display: flex; flex-direction: column; gap: var(--space-2); align-items: flex-end; }
+.maplibregl-ctrl-bottom-left .maplibregl-ctrl { margin: 0; float: none; }
+.stack { display: flex; flex-direction: column; gap: var(--space-2); align-items: flex-end; pointer-events: auto; }
+.stack .btn { pointer-events: auto; }
 .stack .btn { box-shadow: var(--shadow-1); background: var(--surface-1); }
 .maplibregl-ctrl-group { background: var(--surface-1) !important; border: 1px solid var(--hairline); border-radius: var(--radius-md) !important; box-shadow: var(--shadow-1) !important; overflow: hidden; }
 .maplibregl-ctrl-group button { width: var(--tap-min) !important; height: var(--tap-min) !important; }
@@ -46,10 +48,11 @@ html, body { height: 100%; overflow: hidden; }
 @media (prefers-color-scheme: light) { :root:not(.force-dark) { --icon-invert: 0; } }
 /* På touch finns pinch: zoomknapparna döljs så att kontrollerna inte trängs */
 @media (pointer: coarse) { .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group { display: none; } }
-.maplibregl-ctrl-attrib { background: var(--surface-1) !important; color: var(--text-muted) !important; font-size: 11px; border-radius: var(--radius-md) !important; border: 1px solid var(--hairline); }
-.maplibregl-ctrl-attrib a { color: var(--text) !important; }
-.maplibregl-ctrl-attrib.maplibregl-compact { min-height: var(--tap-min); min-width: var(--tap-min); }
-.maplibregl-ctrl-attrib-button { width: var(--tap-min) !important; height: var(--tap-min) !important; background-repeat: no-repeat; background-position: center; filter: invert(var(--icon-invert, 1)); }
+.attrib { position: relative; }
+.attrib .btn { background: var(--surface-1); box-shadow: var(--shadow-1); }
+.attrib-panel { position: absolute; left: 0; bottom: calc(100% + var(--space-2)); width: min(320px, calc(100vw - var(--gutter) - var(--gutter-right) - var(--tap-min) - 2 * var(--space-2))); padding: var(--space-2) var(--space-3); display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--fs-xs); color: var(--text-muted); }
+.attrib-panel a { color: var(--text); }
+@media (min-width: 600px) { .attrib-panel { left: calc(var(--tap-min) + var(--space-2)); bottom: 0; width: max-content; max-width: 70vw; } }
 
 /* ---------- Tågmarkörer: prick vid låg zoom, LineBadge + riktningspil från zoom 13 ---------- */
 .tm { position: absolute; top: 0; left: 0; width: var(--tap-min); height: var(--tap-min); border: 0; padding: 0; background: none; display: grid; place-items: center; cursor: pointer; -webkit-tap-highlight-color: transparent; z-index: 1; }

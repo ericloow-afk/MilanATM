@@ -2,7 +2,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import '../styles/tokens.css';
 import '../styles/components.css';
 import './map.css';
-import { AttributionControl, LngLatBounds, Map as MapLibreMap, NavigationControl, setWorkerUrl, type IControl, type Map as MlMap } from 'maplibre-gl';
+import { LngLatBounds, Map as MapLibreMap, NavigationControl, setWorkerUrl, type IControl, type Map as MlMap } from 'maplibre-gl';
 // MapLibre letar efter sin worker bredvid sin egen fil. Vites produktionsbygge kopierar inte dit den (gav 404 på GitHub Pages,
 // så varken tiles eller våra linjer/stationer kunde ritas, bara DOM-markörerna). Importera den som egen fil och peka ut den.
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
@@ -18,7 +18,7 @@ import { TrainMarkers } from './markers';
 import { addOverlays, setUserFix } from './overlays';
 import { trainSchedule, validityInfo } from './schedule';
 import { BottomSheet } from './sheet';
-import { buildStyle, readMapPalette } from './style';
+import { OFM_ATTRIBUTION, buildStyle, readMapPalette } from './style';
 import { findNextTrafficMs } from './traffic';
 
 setWorkerUrl(maplibreWorkerUrl);
@@ -366,9 +366,48 @@ class FabControl implements IControl {
   private box!: HTMLElement;
   constructor(private buttons: HTMLElement[]) {}
   onAdd(): HTMLElement {
-    this.box = el('div', 'stack');
+    this.box = el('div', 'stack maplibregl-ctrl'); // .maplibregl-ctrl gör barnet tryckbart (containern har pointer-events: none)
     this.box.append(...this.buttons);
     return this.box;
+  }
+  onRemove(): void {
+    this.box.remove();
+  }
+}
+/**
+ * Källor och licens: en 44×44 px knapp (ⓘ) i samma stil som övriga kontroller. Hopfälld som standard på smala skärmar;
+ * tryck fäller ut en panel ovanför knappen (alltså aldrig över bottenpanelen). Länkarna ur kartans och tidtabellens licenser finns kvar.
+ */
+class AttribControl implements IControl {
+  private box!: HTMLElement;
+  private btn!: HTMLButtonElement;
+  private panel!: HTMLElement;
+  onAdd(): HTMLElement {
+    this.box = el('div', 'attrib maplibregl-ctrl');
+    this.btn = el('button', 'btn icon', '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><circle cx="12" cy="7.5" r="0.6"/></svg>', {
+      type: 'button',
+      'aria-label': 'Källor och licens',
+      'aria-expanded': 'false',
+      'aria-controls': 'attrib-panel',
+    });
+    this.panel = el(
+      'div',
+      'attrib-panel panel',
+      `<div>Tidtabell: <a href="https://dati.comune.milano.it/" target="_blank" rel="noopener">Comune di Milano / ATM</a> (CC BY 4.0)</div><div>Karta: ${OFM_ATTRIBUTION}</div>`,
+      { id: 'attrib-panel', role: 'region', 'aria-label': 'Källor och licens' },
+    );
+    this.box.append(this.btn, this.panel);
+    this.toggle(window.innerWidth >= 600);
+    this.btn.addEventListener('click', () => this.toggle());
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !this.panel.hidden) this.toggle(false);
+    });
+    return this.box;
+  }
+  toggle(open?: boolean): void {
+    const next = open ?? this.panel.hidden;
+    this.panel.hidden = !next;
+    this.btn.setAttribute('aria-expanded', String(next));
   }
   onRemove(): void {
     this.box.remove();
@@ -529,10 +568,7 @@ async function start(): Promise<void> {
   map.keyboard.disableRotation();
   map.addControl(new NavigationControl({ showCompass: false }), 'bottom-right');
   map.addControl(new FabControl([listBtn, locateBtn]), 'bottom-right');
-  map.addControl(
-    new AttributionControl({ compact: true, customAttribution: 'Tidtabell: <a href="https://dati.comune.milano.it/" target="_blank" rel="noopener">Comune di Milano / ATM</a> (CC BY 4.0)' }),
-    'bottom-left',
-  );
+  map.addControl(new AttribControl(), 'bottom-left');
   map.on('error', (e) => {
     const ev = e as { sourceId?: string; error?: { message?: string; url?: string; status?: number } };
     console.warn('[map]', ev.sourceId ?? '', ev.error?.message ?? e);
@@ -551,9 +587,10 @@ async function start(): Promise<void> {
   if (map.isStyleLoaded()) ensureOverlays();
   // Vakthund: säg till om lagren eller bakgrunden fortfarande saknas efter en stund
   window.setTimeout(() => {
+    // getSource först: isSourceLoaded på en källa som saknas (stilen ej laddad) skickar ett eget felmeddelande
     const loaded = (id: string) => {
       try {
-        return map.isSourceLoaded(id);
+        return !!map.getSource(id) && map.isSourceLoaded(id);
       } catch {
         return false;
       }
@@ -571,13 +608,6 @@ async function start(): Promise<void> {
   };
   map.on('zoom', syncZoom);
   syncZoom();
-  // Attributionen är kompakt (ⓘ) på smala skärmar när kartan har ritats första gången; den går alltid att öppna
-  map.once('idle', () => {
-    if (window.innerWidth >= 600) return;
-    const a = document.querySelector('.maplibregl-ctrl-attrib');
-    a?.removeAttribute('open');
-    a?.classList.remove('maplibregl-compact-show');
-  });
   const bounds = data.stops.reduce((b, s) => b.extend([s.lon, s.lat]), new LngLatBounds([data.stops[0].lon, data.stops[0].lat], [data.stops[0].lon, data.stops[0].lat]));
   map.fitBounds(bounds, { padding: { top: 150, bottom: 170, left: 24, right: 24 }, animate: false });
   matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => map.setStyle(buildStyle(readMapPalette())));
