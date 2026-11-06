@@ -160,3 +160,13 @@ Dev-länken (`https://172.x.x.x:5174`) funkar bara på samma nät. Utomhus anvä
 - Resultat på loggen: a) vyn ökar aldrig mer än 0,7° över råa rotationen, b) yaw ändras 0,0°/0,1° vid kompassvändningarna, c) 0,0°/s under headingAcc > 25°, d) ±4,1° av medianen. Kompassen användes i 110 av 144 samples.
 - Fynd: "kompassen släpar vid snabb vridning" var till stor del gamma som saknades i heading + alpha; med hela kvaternionen är offseten stabil upp till 113°/s. Hastighetsgrinden är därför satt högt (120°/s). Se rapporten för förslag på tauYaw efter utomhustestet.
 - 212 tester gröna, bygget ok. Inomhuslogg: ej verifierat utomhus.
+
+## UI-uppstädning inför demo (2026-11-06)
+Ingen ny funktionalitet; motor, geo och metro.json är orörda. Mer i `docs/design.md`.
+- **Tokens/komponenter:** solida ytor, 1 px hårlinjer, radie 6–10 px; bort med glas/blur, gradienter, glöd, pulsering, pillerformer. Delade komponenter i `src/styles/components.css` (knappar, panel, segmenterad kontroll, reglage). M4:s visningsfärg ljusad till `#4d7cff` (4,9:1 mot kartan). Kontrasten testas (`src/styles/tokens.test.ts`).
+- **LineBadge** (`src/ui/line-badge.ts`): kvadratisk bricka, 22/28 px, används överallt (lista, panel, markörer, AR-etiketter, kantpilar). Ovalerna berodde på att en rund bricka med `min-width` sträcktes i en flex-rad; nu `aspect-ratio: 1` och `flex: none`.
+- **Karta:** ett toppfält i stället för två chips (klocka HH:MM, "Tidtabell", ingen "LIVE"); panel med giltighet ("Giltig till 30 nov 2026") och klockkontroll; prickar under zoom 13, LineBadge från 13; kontrollerna i en vertikal grupp utan överlapp; dämpade ortnamn; kompaktare bottenpanel.
+- **AR:** ny startvy, en HUD-rad (tekniken fälls ut), verktygsknapparna bakom "Verktyg" eller `?debug=1`, simulatorn som nedfällbar bottenpanel med egna reglage, etiketter under panelerna.
+- **Startsida och sensortest:** ny startsida med innehåll och källor; sensortestet mörkt i samma stil.
+- **Verifierat** (webbläsarpanelen, dev utan SSL): inga horisontella scrollar, inga avkortade texter, inga tryckytor under 44 px och inga element utanför skärmen på startsidan, kartan (med öppen panel), AR-start, AR-simulator (öppen) och sensortest i 390×844, 375×667 och 430×932; kartan även i ljust läge. JS-tid per bildruta på kartan oförändrad (ca 1,1–1,3 ms, 53 tåg).
+- **Ej verifierat:** på iPhone (touch, safe areas, Safaris verktygsfält), FPS (panelen är dold och pausar bildrutor), AR i sensorläge med verklig kamera.
