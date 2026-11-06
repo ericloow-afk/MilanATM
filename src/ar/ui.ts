@@ -61,7 +61,7 @@ const ICON_CLOSE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12
 export class ArUi {
   readonly labels = h('<div id="labels" aria-hidden="true"></div>');
   readonly hudBox = h(`<div id="hudbox">
-      <button type="button" class="hud-row panel" id="hud-btn" aria-expanded="false" aria-controls="hud-details"><span id="hud-text">Startar…</span><span class="chev" aria-hidden="true"></span></button>
+      <button type="button" class="hud-row panel" id="hud-btn" aria-expanded="false" aria-controls="hud-details"><span id="hud-text">Väntar på start</span><span class="chev" aria-hidden="true"></span></button>
       <dl class="hud-details panel num" id="hud-details" hidden></dl>
       <pre class="errors panel" id="errors" hidden></pre>
     </div>`);

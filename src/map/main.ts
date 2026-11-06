@@ -461,7 +461,7 @@ function frame(rafTs: number): void {
 // ---------- dold FPS-/JS-mätare (långtryck på klockan, eller ?perf=1) ----------
 const perfEl = el('pre', 'perf panel', '', { 'aria-live': 'off' });
 perfEl.hidden = new URLSearchParams(location.search).get('perf') !== '1';
-perfEl.textContent = 'mäter…';
+perfEl.textContent = 'mäter';
 app.append(perfEl);
 const perf = { tickMs: 0, frames: 0, jsSum: 0, jsMax: 0, gapMax: 0, windowStart: 0, lastTs: 0 };
 function perfFrame(rafTs: number, jsMs: number): void {
@@ -489,7 +489,7 @@ function perfFrame(rafTs: number, jsMs: number): void {
 function togglePerf(): void {
   perfEl.hidden = !perfEl.hidden;
   Object.assign(perf, { frames: 0, jsSum: 0, jsMax: 0, gapMax: 0, windowStart: 0, lastTs: 0 });
-  perfEl.textContent = 'mäter…';
+  perfEl.textContent = 'mäter';
   toast(perfEl.hidden ? 'Prestandamätaren dold' : 'Prestandamätaren visas (långtryck på klockan döljer den)');
 }
 

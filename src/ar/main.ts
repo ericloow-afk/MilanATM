@@ -64,7 +64,7 @@ function makeRow(): LogRow {
   };
 }
 const recLabel = () =>
-  recorder.active ? `Spelar… ${recorder.remainingSec(Date.now())} s (${recorder.rowCount})` : `Spela in 30 s${recorder.rowCount ? ` (${recorder.rowCount} rader)` : ''}`;
+  recorder.active ? `Spelar ${recorder.remainingSec(Date.now())} s (${recorder.rowCount})` : `Spela in 30 s${recorder.rowCount ? ` (${recorder.rowCount} rader)` : ''}`;
 
 // ---------- hjälpare ----------
 const fmtRome = (d: Date) => fmtHMS(romeServiceTime(d).sec);
