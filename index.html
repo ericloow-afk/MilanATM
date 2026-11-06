@@ -1,12 +1,66 @@
 <!doctype html>
-<html lang="sv">
+<html lang="sv" class="force-dark">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Milano Metro AR</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#0e1114" />
+    <title>Milano Metro – karta och AR</title>
+    <meta name="description" content="Milanos tunnelbana under fötterna: karta och AR, beräknad ur tidtabellen." />
+    <meta property="og:title" content="Milano Metro – karta och AR" />
+    <meta property="og:description" content="Milanos tunnelbana under fötterna: karta och AR, beräknad ur tidtabellen." />
+    <meta property="og:type" content="website" />
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/src/styles/tokens.css" />
+    <link rel="stylesheet" href="/src/styles/components.css" />
+    <link rel="stylesheet" href="/src/home.css" />
   </head>
   <body>
-    <h1>Milano Metro AR</h1>
-    <p>Prototyp. <a href="./map.html">Karta</a> · <a href="./ar.html">AR</a> · <a href="./ar.html?sim=1">AR-simulator</a> · <a href="./sensor-test.html">sensortest</a></p>
+    <main class="page">
+      <header>
+        <div class="wordmark">Milano Metro</div>
+        <h1>Milanos tunnelbana under fötterna: karta och AR, beräknad ur tidtabellen</h1>
+        <div class="actions">
+          <a class="btn primary" href="./map.html">Öppna kartan</a>
+          <a class="btn secondary" href="./ar.html?sim=1">Prova AR-simulatorn</a>
+        </div>
+        <p class="muted small">På en iPhone kan du starta AR med kamera och sensorer via <a href="./ar.html">AR-vyn</a>.</p>
+      </header>
+
+      <section aria-labelledby="h-what">
+        <h2 id="h-what">Vad det är</h2>
+        <p>En prototyp som visar tågen på linje M1–M5 i Milano, på en karta och som AR över kamerabilden. Tågens läge är beräknat ur tidtabellen, inte uppmätt.</p>
+      </section>
+
+      <section aria-labelledby="h-est">
+        <h2 id="h-est">Vad som är beräknat och uppskattat</h2>
+        <ul>
+          <li><strong>Tågpositioner</strong> räknas ur tidtabellen (GTFS), inte från tågen själva.</li>
+          <li><strong>Uppehållstider</strong> saknas i tidtabellen och är uppskattade: vanligtvis 22 s, längre vid bytesstationer och ändstationer.</li>
+          <li><strong>Tunneldjup</strong> är 15 m för alla linjer. Det är en uppskattning, inte uppmätt.</li>
+          <li><strong>Inget är realtid.</strong> Förseningar, strejker och störningar syns inte.</li>
+          <li>Tidtabellen har en begränsad giltighet. När den har gått ut visas inga tåg.</li>
+        </ul>
+      </section>
+
+      <section aria-labelledby="h-missing">
+        <h2 id="h-missing">Vad som saknas</h2>
+        <p>Realtid för M1–M5. Ingen officiell öppen realtidsdata för tunnelbanan hittades, och det inofficiella gränssnittet som finns används inte.</p>
+      </section>
+
+      <section aria-labelledby="h-src">
+        <h2 id="h-src">Källor och licens</h2>
+        <ul>
+          <li>Tidtabell: ATM och Comune di Milano, <a href="https://dati.comune.milano.it/">öppna data</a> (CC BY 4.0).</li>
+          <li>Bakgrundskarta: <a href="https://openfreemap.org">OpenFreeMap</a>, © <a href="https://www.openmaptiles.org/">OpenMapTiles</a>, data från <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>.</li>
+          <li>Bibliotek: <a href="https://threejs.org/">three.js</a> (MIT) och <a href="https://maplibre.org/">MapLibre GL JS</a> (BSD-3-Clause).</li>
+          <li>Koden finns på <a href="https://github.com/ericloow-afk/MilanATM">GitHub</a>.</li>
+        </ul>
+      </section>
+
+      <footer>
+        <span class="muted small">Verktyg: <a href="./sensor-test.html">sensortest</a></span>
+      </footer>
+    </main>
   </body>
 </html>
