@@ -1,4 +1,5 @@
 /** Tidtabellsinfo för ett valt tåg och tidtabellens giltighet. Ren TS, bygger på metro.json och motorns Train. */
+import { DEFAULT_OPTIONS, patternTimings, type EngineOptions } from '../engine';
 import { romeServiceTime } from '../engine/time';
 import type { MetroData, Train } from '../engine/types';
 
@@ -18,6 +19,8 @@ export interface TrainSchedule {
   secondsToNextArrival: number;
   /** sekunder till avgång om tåget står vid en station, annars null */
   secondsToDeparture: number | null;
+  /** tåget står vid ändstationen efter ankomst (vändtid) */
+  atTerminus: boolean;
 }
 
 const daysBetween = (fromYmd: number, toYmd: number): number => {
@@ -31,7 +34,8 @@ export function parseTrainId(id: string): { pattern: number; service: number; da
   return m ? { pattern: Number(m[1]), service: Number(m[2]), day: Number(m[3]), start: Number(m[4]) } : null;
 }
 
-export function trainSchedule(data: MetroData, train: Train, at: Date): TrainSchedule | null {
+/** Tider följer motorns effektiva tider (med uppehållsmodellen om den används), så nedräkningen stämmer med markören. */
+export function trainSchedule(data: MetroData, train: Train, at: Date, opts: EngineOptions = DEFAULT_OPTIONS): TrainSchedule | null {
   const id = parseTrainId(train.id);
   if (!id) return null;
   const pat = data.patterns[id.pattern];
@@ -41,7 +45,8 @@ export function trainSchedule(data: MetroData, train: Train, at: Date): TrainSch
   const last = pat.stops.length - 1;
   const { ymd, sec } = romeServiceTime(at);
   const rel = sec + daysBetween(id.day, ymd) * 86400 - id.start;
-  const nextIdx = Math.min(last, i + (train.status === 'dwelling' ? 1 : 1));
+  const nextIdx = Math.min(last, i + 1);
+  const tm = patternTimings(data, opts)[id.pattern];
   const nameAt = (k: number) => data.stops[pat.stops[k]].name;
   const total = pat.sd[last] - pat.sd[0];
   const dNow =
@@ -55,8 +60,9 @@ export function trainSchedule(data: MetroData, train: Train, at: Date): TrainSch
     stopIndex: i,
     stops: pat.stops.map((_, k) => ({ name: nameAt(k), f: total > 0 ? (pat.sd[k] - pat.sd[0]) / total : k / last })),
     routeProgress: total > 0 ? Math.min(1, Math.max(0, (dNow - pat.sd[0]) / total)) : 0,
-    secondsToNextArrival: Math.max(0, pat.a[nextIdx] - rel),
-    secondsToDeparture: train.status === 'dwelling' ? Math.max(0, pat.a[i] + pat.w[i] - rel) : null,
+    secondsToNextArrival: Math.max(0, tm.arr[nextIdx] - rel),
+    secondsToDeparture: train.status === 'dwelling' && i < last ? Math.max(0, tm.dep[i] - rel) : null,
+    atTerminus: i >= last,
   };
 }
 

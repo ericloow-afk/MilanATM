@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { shapeIndex } from '../geo';
-import { trains } from '../engine';
+import { SCHEDULE_ONLY, trains as engineTrains } from '../engine';
 import { makeData, S_ALT, S_BENT, S_EAST } from '../engine/testdata';
 import type { MetroData, Train } from '../engine/types';
 import { parseTrainId, trainSchedule, validityInfo } from './schedule';
+
+const trains = (d: MetroData, at: Date) => engineTrains(d, at, SCHEDULE_ONLY);
+const sched = (d: MetroData, t: Train, at: Date) => trainSchedule(d, t, at, SCHEDULE_ONLY);
 
 const east = shapeIndex(S_EAST);
 const bent = shapeIndex(S_BENT);
@@ -27,7 +30,7 @@ describe('parseTrainId', () => {
 describe('trainSchedule', () => {
   it('under gång: nedräkning till ankomst vid nästa station och framsteg längs sträckan', () => {
     const { t, at } = t1At(100); // 50 s före ankomst till B
-    const s = trainSchedule(data, t, at)!;
+    const s = sched(data, t, at)!;
     expect(s.fromName).toBe('A');
     expect(s.nextStationName).toBe('B');
     expect(s.terminusName).toBe('C');
@@ -44,7 +47,7 @@ describe('trainSchedule', () => {
   });
   it('under uppehåll: avgång om N s och nästa station är nästa i turen', () => {
     const { t, at } = t1At(160); // dwell vid B, avgår 180
-    const s = trainSchedule(data, t, at)!;
+    const s = sched(data, t, at)!;
     expect(t.status).toBe('dwelling');
     expect(s.fromName).toBe('B');
     expect(s.nextStationName).toBe('C');
@@ -56,13 +59,13 @@ describe('trainSchedule', () => {
     // natt-trip: tjänstedygn 6/11, start 85800, B ank 86400 → 00:00:00 den 7/11. Vid 00:05 är den på väg B→C.
     const at = rome(0, 5, 0, 7);
     const t = trains(data, at).find((x) => x.id.startsWith('1:1:20261106'))!;
-    const s = trainSchedule(data, t, at)!;
+    const s = sched(data, t, at)!;
     expect(s.fromName).toBe('B');
     expect(s.secondsToNextArrival).toBeCloseTo(87300 - 86700, 6); // C ank. 87300
   });
   it('okänt id ger null', () => {
     const { t, at } = t1At(10);
-    expect(trainSchedule(data, { ...t, id: 'x' }, at)).toBeNull();
+    expect(sched(data, { ...t, id: 'x' }, at)).toBeNull();
   });
 });
 

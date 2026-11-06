@@ -143,3 +143,13 @@ Dev-länken (`https://172.x.x.x:5174`) funkar bara på samma nät. Utomhus anvä
 - "Positioner enligt tidtabell" och giltigheten är nu en tryckbar chip som fäller ut detaljer (giltighet, status, källa, bygge).
 - Tågprickar har ljus kontur på mörk karta (`--marker-outline`), mörk på ljus.
 - 179 tester gröna, bygget ok.
+
+## F1 – Rörelse och realism (2026-11-06)
+- **Mätning:** `node tools/dwell-report.mjs` → `docs/dwell-report.md`. Feeden har 0 s uppehåll på alla 187 478 stopphändelser (även ändstationer): därför rullade tågen igenom stationerna. Motorn hanterade uppehåll (test med syntetiskt 30 s-uppehåll fanns), men verklig data hade inga.
+- **Uppehållsmodell (estimate):** `src/engine/dwell.ts`, dokumenterad i `docs/data-notes.md`. 22 s standard, 28–40 s på bytes-/centrala stationer, 60 s vändtid vid ändstationer. Avgångstiderna står kvar, tåget ankommer tidigare; körtiden kortas högst 35 % och aldrig under 30 s.
+- **Rörelseprofil:** trapets (ca 18 s acceleration, marschfart, inbromsning), samma ankomsttid.
+- **Motor:** `activeTrips()` (en gång per sekund) + `positionAt(run, t)` (per bildruta). `trains(data, at, opts)` bygger på dem; `SCHEDULE_ONLY` ger tidtabellen exakt.
+- **Karta:** positionen räknas per `requestAnimationFrame` från en kontinuerlig klocka (`performance.timeOrigin + performance.now()`), ingen interpolation mellan sekundsteg. Nedräkningen i panelen följer samma effektiva tider.
+- **Prestandamätare:** långtryck på klockan (eller `?perf=1`): FPS, längsta bildruta, JS-tid per bildruta, omräkningstid, antal tåg, bygge.
+- **Hastighetsrapport:** `docs/segment-speed-report.md` visar nu både med modell (median 10,3 m/s, toppfart max 26,1 m/s på ett M1-segment) och tidtabellen exakt.
+- 196 tester gröna, bygget ok. **Ej mätt på iPhone:** FPS/JS-tid (webbläsarpanelen pausar bildrutor när den är dold, så siffrorna här säger inget).

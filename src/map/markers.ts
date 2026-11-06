@@ -1,7 +1,6 @@
 /** Tågmarkörer (DOM) på kartan: linjebricka, riktning, pulserande ring vid uppehåll, vit ring när valt. */
 import { Marker, type Map as MlMap } from 'maplibre-gl';
 import type { Train } from '../engine/types';
-import type { Animated } from './anim';
 
 interface Entry {
   marker: Marker;
@@ -41,10 +40,11 @@ export class TrainMarkers {
     return { marker, el, label: '', cls: '', heading: NaN };
   }
 
-  update(items: { anim: Animated; train: Train }[], selectedId: string | null): void {
+  /** Anropas varje bildruta med tågens aktuella positioner. */
+  update(items: Train[], selectedId: string | null): void {
     const seen = new Set<string>();
-    for (const { anim, train } of items) {
-      if (anim.vanishing) continue;
+    for (const train of items) {
+      const anim = { lat: train.lat, lon: train.lon, heading: train.headingDeg };
       seen.add(train.id);
       let e = this.entries.get(train.id);
       if (!e) {
@@ -63,10 +63,11 @@ export class TrainMarkers {
         e.el.style.setProperty('--h', `${anim.heading.toFixed(1)}deg`);
         e.heading = anim.heading;
       }
-      const label = this.hooks.describe(train);
-      if (label !== e.label) {
-        e.el.setAttribute('aria-label', label);
-        e.label = label;
+      // aria-label byggs bara om när status eller stationer ändras (inte varje bildruta)
+      const labelKey = `${train.status}|${train.fromStation}|${train.toStation}`;
+      if (labelKey !== e.label) {
+        e.el.setAttribute('aria-label', this.hooks.describe(train));
+        e.label = labelKey;
       }
     }
     for (const [id, e] of this.entries) {

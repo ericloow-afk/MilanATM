@@ -5,11 +5,10 @@ import { AttributionControl, LngLatBounds, Map as MapLibreMap, NavigationControl
 // MapLibre letar efter sin worker bredvid sin egen fil. Vites produktionsbygge kopierar inte dit den (gav 404 på GitHub Pages,
 // så varken tiles eller våra linjer/stationer kunde ritas, bara DOM-markörerna). Importera den som egen fil och peka ut den.
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
-import { dataStatus, trains } from '../engine';
+import { activeTrips, dataStatus, positionAt, type TripRun } from '../engine';
 import { romeDate, romeServiceTime } from '../engine/time';
 import type { MetroData, Train } from '../engine/types';
 import { haversine } from '../geo';
-import { interpolateTrains, type Pos } from './anim';
 import { MapClock } from './clock';
 import { TrainMarkers } from './markers';
 import { addOverlays, setUserFix } from './overlays';
@@ -22,7 +21,8 @@ setWorkerUrl(maplibreWorkerUrl);
 const BUILD_ID = typeof __BUILD_ID__ === 'string' ? __BUILD_ID__ : 'dev';
 
 const TICK_MS = 1000;
-const FRAME_MS = 33;
+/** Kontinuerlig väggklocka i epoch-ms (sub-ms upplösning, hoppar inte som Date.now() kan göra). */
+const wallNow = () => performance.timeOrigin + performance.now();
 const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const pad = (n: number) => String(Math.floor(n)).padStart(2, '0');
@@ -43,20 +43,19 @@ let selectedId: string | null = null;
 let returnFocus: HTMLElement | null = null;
 let userFix: { lat: number; lon: number; accuracy: number } | null = null;
 let watchId: number | null = null;
+/** aktiva trips; räknas om ungefär en gång per sekund */
+let runs: TripRun[] = [];
+/** tågens position i senaste bildrutan */
 let curTrains = new Map<string, Train>();
-let meta = new Map<string, Train>();
-let prevPos = new Map<string, Pos>();
-let nextPos = new Map<string, Pos>();
+let meta = curTrains;
 let lastTick = -Infinity;
-let lastFrame = 0;
-let needReset = true;
+let lastMarkerUpdate = -Infinity;
 let lastNoticeKey = '';
 let nextTraffic: { forMinute: number; ms: number | null } | null = null;
 
 const stopName = (id: string) => data.stops.find((s) => s.id === id)?.name ?? id;
 const dirName = (id: string) => data.directions.find((d) => d.id === id)?.name ?? id;
 const lineName = (id: string) => `M${data.lines.find((l) => l.id === id)?.name ?? id}`;
-const toPos = (ts: Train[]) => new Map<string, Pos>(ts.map((t) => [t.id, { lat: t.lat, lon: t.lon, heading: t.headingDeg }]));
 const describe = (t: Train) =>
   `${lineName(t.line)} mot ${dirName(t.direction)}, ${t.status === 'dwelling' ? `står vid ${stopName(t.fromStation)}` : `på väg från ${stopName(t.fromStation)} till ${stopName(t.toStation)}`}`;
 
@@ -172,7 +171,6 @@ app.append(topbar, clockBox, notice, diag, toastEl, live);
 
 // ---------- klocka ----------
 function clockChanged(): void {
-  needReset = true;
   lastTick = -Infinity;
   nextTraffic = null;
 }
@@ -182,7 +180,23 @@ function setClockRome(hhmm: string, dayOf?: Date): void {
   clock.setTime(romeDate(ymd, h * 3600 + m * 60), Date.now());
   clockChanged();
 }
-clockPill.addEventListener('click', () => {
+let longPressTimer = 0;
+let longPressed = false;
+clockPill.addEventListener('pointerdown', () => {
+  longPressed = false;
+  longPressTimer = window.setTimeout(() => {
+    longPressed = true;
+    togglePerf();
+  }, 650);
+});
+for (const ev of ['pointerup', 'pointerleave', 'pointercancel'] as const) clockPill.addEventListener(ev, () => clearTimeout(longPressTimer));
+clockPill.addEventListener('contextmenu', (e) => e.preventDefault());
+clockPill.addEventListener('click', (e) => {
+  if (longPressed) {
+    longPressed = false;
+    e.preventDefault();
+    return;
+  }
   clockPanel.hidden = !clockPanel.hidden;
   clockPill.setAttribute('aria-expanded', String(!clockPanel.hidden));
 });
@@ -379,10 +393,17 @@ function renderTrain(t: Train): void {
     const n = sheet.body.querySelector(`[data-f="${f}"]`);
     if (n && n.textContent !== text) n.textContent = text;
   };
-  set('status', t.status === 'dwelling' ? `Står vid ${sch.fromName}${sch.secondsToDeparture != null ? ` · avgår om ${fmtCount(Math.round(sch.secondsToDeparture))}` : ''}` : `På väg från ${sch.fromName}`);
+  set(
+    'status',
+    sch.atTerminus
+      ? `Framme vid ändstationen ${sch.fromName}`
+      : t.status === 'dwelling'
+        ? `Står vid ${sch.fromName}${sch.secondsToDeparture != null ? ` · avgår om ${fmtCount(Math.round(sch.secondsToDeparture))}` : ''}`
+        : `På väg från ${sch.fromName}`,
+  );
   set('nextlabel', t.status === 'dwelling' ? 'Nästa station efter avgång' : 'Nästa station');
-  set('next', sch.nextStationName);
-  set('count', fmtCount(Math.round(t.status === 'dwelling' && sch.secondsToDeparture != null ? sch.secondsToDeparture : sch.secondsToNextArrival)));
+  set('next', sch.atTerminus ? '–' : sch.nextStationName);
+  set('count', sch.atTerminus ? '' : fmtCount(Math.round(t.status === 'dwelling' && sch.secondsToDeparture != null ? sch.secondsToDeparture : sch.secondsToNextArrival)));
   set('stopn', `${sch.stopIndex + 1} av ${sch.stopCount}`);
   set('dist', userFix ? fmtDist(haversine(userFix.lat, userFix.lon, t.lat, t.lon)) : 'Aktivera Min position');
   (sheet.body.querySelector('.route') as HTMLElement).style.setProperty('--p', sch.routeProgress.toFixed(4));
@@ -504,36 +525,78 @@ listBtn.addEventListener('click', () => {
 });
 
 // ---------- huvudloop ----------
-function doTick(wall: number): void {
-  // wall = rAF-tid (för animering); klockan använder epoch-tid
-  const nowMs = clock.nowMs(Date.now());
-  const cur = trains(data, new Date(nowMs));
-  const scale = clock.scale;
-  const nxt = scale === 0 ? cur : trains(data, new Date(nowMs + TICK_MS * scale));
-  prevPos = needReset || wall - lastTick > 3 * TICK_MS ? toPos(cur) : nextPos;
-  nextPos = toPos(nxt);
-  needReset = false;
-  lastTick = wall;
-  curTrains = new Map(cur.map((t) => [t.id, t]));
-  meta = new Map([...nxt, ...cur].map((t) => [t.id, t]));
-  renderClock(nowMs);
-  renderValidity(nowMs);
-  renderNotice(nowMs);
-  renderSheet();
+/** Räknar om listan av aktiva trips (ca 1 gång/s). Horisonten täcker tåg som dyker upp före nästa omräkning. */
+function refreshRuns(nowMs: number): void {
+  const t0 = performance.now();
+  const horizonSec = (TICK_MS / 1000) * Math.max(clock.scale, 1) * 1.5 + 1;
+  runs = activeTrips(data, new Date(nowMs), horizonSec);
+  perf.tickMs = performance.now() - t0;
 }
 
-function frame(wall: number): void {
-  if (wall - lastTick >= TICK_MS) doTick(wall);
-  if (wall - lastFrame >= FRAME_MS) {
-    lastFrame = wall;
-    const f = reducedMotion() ? 1 : Math.min(1, (wall - lastTick) / TICK_MS);
-    const anims = interpolateTrains(prevPos, nextPos, f);
-    markers.update(
-      anims.flatMap((a) => (meta.has(a.id) ? [{ anim: a, train: meta.get(a.id)! }] : [])),
-      selectedId,
-    );
+/** Varje bildruta: position för varje aktiv trip från den kontinuerliga klockan (inga sekundsteg). */
+function frame(rafTs: number): void {
+  const t0 = performance.now();
+  const nowMs = clock.nowMs(wallNow());
+  const tick = rafTs - lastTick >= TICK_MS;
+  if (tick) {
+    lastTick = rafTs;
+    refreshRuns(nowMs);
   }
+  // Med prefers-reduced-motion flyttas markörerna en gång per sekund i stället för att glida
+  if (tick || !reducedMotion() || rafTs - lastMarkerUpdate >= TICK_MS) {
+    lastMarkerUpdate = rafTs;
+    const list: Train[] = [];
+    for (const r of runs) {
+      const t = positionAt(r, nowMs);
+      if (t) list.push(t);
+    }
+    curTrains = new Map(list.map((t) => [t.id, t]));
+    meta = curTrains;
+    markers.update(list, selectedId);
+  }
+  if (tick) {
+    renderClock(nowMs);
+    renderValidity(nowMs);
+    renderNotice(nowMs);
+    renderSheet();
+  }
+  perfFrame(rafTs, performance.now() - t0);
   requestAnimationFrame(frame);
+}
+
+// ---------- dold FPS-/JS-mätare (långtryck på klockan, eller ?perf=1) ----------
+const perfEl = el('pre', 'perf glass', '', { 'aria-live': 'off' });
+perfEl.hidden = new URLSearchParams(location.search).get('perf') !== '1';
+perfEl.textContent = 'mäter…';
+app.append(perfEl);
+const perf = { tickMs: 0, frames: 0, jsSum: 0, jsMax: 0, gapMax: 0, windowStart: 0, lastTs: 0 };
+function perfFrame(rafTs: number, jsMs: number): void {
+  if (perfEl.hidden) return;
+  if (!perf.windowStart) perf.windowStart = rafTs;
+  if (perf.lastTs) perf.gapMax = Math.max(perf.gapMax, rafTs - perf.lastTs);
+  perf.lastTs = rafTs;
+  perf.frames++;
+  perf.jsSum += jsMs;
+  perf.jsMax = Math.max(perf.jsMax, jsMs);
+  const span = rafTs - perf.windowStart;
+  if (span >= 1000) {
+    const fps = (perf.frames * 1000) / span;
+    perfEl.textContent =
+      `FPS ${fps.toFixed(0)} · längsta bildruta ${perf.gapMax.toFixed(0)} ms
+` +
+      `JS/bildruta ${(perf.jsSum / perf.frames).toFixed(1)} ms (max ${perf.jsMax.toFixed(1)})
+` +
+      `omräkning trips ${perf.tickMs.toFixed(1)} ms · tåg ${curTrains.size} · aktiva ${runs.length}
+` +
+      `bygge ${BUILD_ID}`;
+    Object.assign(perf, { frames: 0, jsSum: 0, jsMax: 0, gapMax: 0, windowStart: rafTs });
+  }
+}
+function togglePerf(): void {
+  perfEl.hidden = !perfEl.hidden;
+  Object.assign(perf, { frames: 0, jsSum: 0, jsMax: 0, gapMax: 0, windowStart: 0, lastTs: 0 });
+  perfEl.textContent = 'mäter…';
+  toast(perfEl.hidden ? 'Prestandamätaren dold' : 'Prestandamätaren visas (långtryck på klockan döljer den)');
 }
 
 // ---------- start ----------

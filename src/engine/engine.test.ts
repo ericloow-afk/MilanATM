@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { haversine, pointAlong, shapeIndex } from '../geo';
-import { dataStatus, romeServiceTime, trains } from './index';
+import { dataStatus, romeServiceTime, SCHEDULE_ONLY, trains as engineTrains } from './index';
 import { makeData, S_ALT, S_BENT, S_EAST } from './testdata';
 import type { MetroData, Train } from './types';
+
+// Dessa tester gäller tidtabellen exakt (utan uppehållsmodell, konstant hastighet). Modellen testas i motion.test.ts.
+const trains = (d: MetroData, at: Date) => engineTrains(d, at, SCHEDULE_ONLY);
 
 // ---- testdata ----
 const east = shapeIndex(S_EAST);
