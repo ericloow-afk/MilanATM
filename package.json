@@ -10,7 +10,8 @@
     "test": "vitest run",
     "build:data": "node tools/build-metro.mjs data/raw/gtfs.zip",
     "next": "node tools/next-departures.mjs",
-    "replay": "vite-node tools/filter-replay-report.ts"
+    "replay": "vite-node tools/filter-replay-report.ts",
+    "test:ui": "vitest run --config vitest.e2e.config.ts"
   },
   "dependencies": {
     "maplibre-gl": "^6.16.0",
@@ -20,6 +21,7 @@
     "@types/three": "^0.170.0",
     "@vitejs/plugin-basic-ssl": "^1.2.0",
     "fflate": "^0.8.3",
+    "playwright-core": "^1.55.0",
     "typescript": "^5.6.0",
     "vite": "^6.0.0",
     "vitest": "^2.1.0"

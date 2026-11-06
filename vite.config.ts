@@ -15,7 +15,8 @@ export default defineConfig({
   // MapLibres worker hittas inte om Vite förbundlar paketet i dev
   optimizeDeps: { exclude: ['maplibre-gl'] },
   // Vitest: släpp igenom CSS-filer som importeras med ?raw (designtokens testas som text)
-  test: { css: { include: [/\.css(\?raw)?$/] } } as never,
+  // Interaktionstestet i e2e/ körs separat (npm run test:ui) och ingår inte i `npm test`.
+  test: { css: { include: [/\.css(\?raw)?$/] }, exclude: ['e2e/**', 'node_modules/**', 'dist/**'] } as never,
   build: {
     rollupOptions: {
       input: {
