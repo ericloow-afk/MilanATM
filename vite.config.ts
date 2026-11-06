@@ -4,7 +4,8 @@ import { resolve } from 'node:path';
 
 export default defineConfig({
   // Själv-signerat HTTPS + lyssna på nätverket, så iPhone kan nå dev-servern (kamera/sensorer kräver HTTPS).
-  plugins: [basicSsl()],
+  // NO_SSL=1: ren http (till exempel localhost-test på desktop; localhost räknas som säker kontext).
+  plugins: process.env.NO_SSL ? [] : [basicSsl()],
   server: { host: true, port: 5173 },
   // Relativ bas: fungerar på https://<user>.github.io/<repo>/ utan hårdkodat repo-namn.
   base: './',
@@ -13,6 +14,7 @@ export default defineConfig({
       input: {
         main: resolve(__dirname, 'index.html'),
         sensorTest: resolve(__dirname, 'sensor-test.html'),
+        ar: resolve(__dirname, 'ar.html'),
       },
     },
   },

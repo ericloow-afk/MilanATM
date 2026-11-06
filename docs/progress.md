@@ -5,10 +5,16 @@
 | Punkt | Status |
 |---|---|
 | 1. ATM-probe (`docs/atm-probe.md`) | Väntar: användaren kör skriptet och klistrar in resultatet |
-| 2. Sensortest-sida (kamera + GPS + kompass) | **Byggd, ej verifierad på iPhone** |
+| 2. Sensortest-sida (kamera + GPS + kompass) | **Byggd och verifierad på iPhone** (Safari, HTTPS, inomhus). Utomhustestet återstår |
 | 3. GTFS-validering | **Gjord 2026-11-06**, se `docs/gtfs-notes.md` (`tools/inspect-gtfs.mjs`). Viktigast: feeden gäller bara till 2026-11-30, `calendar.txt` är tom, `direction_id` är tom |
 
-Klart-kriterium för punkt 2: sensortestet visar heading och GPS på din telefon över HTTPS. Det kan bara bekräftas av dig; fyll i checklistan nedan.
+Klart-kriterium för punkt 2: sensortestet visar heading och GPS på din telefon över HTTPS. **Uppfyllt** (verifierat av användaren på iPhone i Safari över HTTPS, inomhus):
+- Kamera fungerar (bakre).
+- GPS fungerar, noggrannhet ca ±9 m inomhus.
+- `webkitCompassHeading` fungerar, `webkitCompassAccuracy` ca ±12–15° inomhus.
+- alpha/beta/gamma fungerar.
+
+**Återstår:** utomhustestet (checklistan nedan): kompassriktning mot känd gata, 30 s-inspelning vid lutning, GPS-noggrannhet utomhus.
 
 ### Gjort
 - Vite + TypeScript (vanilla), Vitest, three.js (används först i Fas 4).
@@ -55,7 +61,7 @@ Felsökning:
 
 ### Öppna på mobildata (utomhus)
 Dev-länken (`https://172.x.x.x:5174`) funkar bara på samma nät. Utomhus använder du GitHub Pages-adressen (se Deploy ovan): stäng av Wi-Fi på iPhone, öppna `https://<användare>.github.io/<repo>/sensor-test.html` i Safari på mobildata. Efter varje ändring måste du pusha till `main` och vänta tills Actions är grönt (ca 1 min); ladda om sidan (dra ned eller stäng fliken) så du inte får en cachad version.
-**Status:** ej deployat än. Mappen är inget git-repo, så ingen HTTPS-adress finns att verifiera.
+**Status:** sensortestet har körts på iPhone över HTTPS (inomhus). Test på mobildata utomhus återstår.
 
 ### Utomhus-testchecklista
 **(a) Riktning mot gata.** Slå upp en gata i en kartapp där du kan läsa av riktningen i grader (kartappens kompass eller mät mot norr). Stå vid gatan, håll telefonen upprätt och rikta den längs gatan. Läs `webkitCompassHeading` och `alpha-riktning`.
@@ -72,10 +78,10 @@ Dev-länken (`https://172.x.x.x:5174`) funkar bara på samma nät. Utomhus anvä
 - [ ] Plats: öppen/gatukanjon, antal sekunder till första fix: ___
 
 ### Checklista – grundtest (fyll i efter test)
-- [ ] Bakre kameran visas
-- [ ] GPS lat/lon visas, noggrannhet: ___ m (utomhus / inomhus)
-- [ ] `webkitCompassHeading` ändras när jag vrider mig; pekar rätt mot norr (±): ___°
-- [ ] alpha/beta/gamma ändras vid lutning
+- [x] Bakre kameran visas
+- [x] GPS lat/lon visas, noggrannhet: ±9 m inomhus (utomhus: ___ m)
+- [x] `webkitCompassHeading` fungerar, `webkitCompassAccuracy` ca ±12–15° inomhus (pekar rätt mot norr, utomhus: ___°)
+- [x] alpha/beta/gamma fungerar
 - [ ] iOS-version: ___
 
 ## Fas 1 – Data (byggd 2026-11-06, väntar på din jämförelse mot ATM:s app)
@@ -90,3 +96,21 @@ Dev-länken (`https://172.x.x.x:5174`) funkar bara på samma nät. Utomhus anvä
 - Tester: 79 gröna totalt (geo 9, motor 36 inkl. 3 mot verkliga metro.json, hastighetsrapport 5, Fas 1-tester 20, övriga 9).
 - Hastighetsrapport: `node tools/segment-speeds.mjs` → `docs/segment-speed-report.md`. 0 segment över 25 m/s eller under 1 m/s; median 7,7 m/s, min 2,8 (M2 Caiazzo → Loreto), max 16,3 (M4 Repetti → Linate).
 - Känd begränsning: Rom-väggklocka för tjänstedygn (ingen exakt GTFS-hantering av dagar med sommartidsskifte; ingen sådan dag i feeden).
+
+## Fas 4 – AR-vy (byggd 2026-11-06, ej testad på enhet)
+- `ar.html` (`src/ar/*`): kameravideo + transparent three.js-canvas, tåg inom 300 m som block (90×3×3,5 m i linjefärg) på y = −djup, lodlinje + ring på marken, marknivårutnät (20 m och 5 m), etiketter, kantpilar, tryck/klick på etikett eller tåg ger info (linje, riktning, från→till, avstånd, km/h, djup uppskattat, "enligt tidtabell", "ungefärlig" vid grov shape), GPS-noggrannhet och kompasstatus i HUD, banner "tidtabellen har gått ut".
+- Matematik i `src/geo` (`enu.ts`, `orientation.ts`) och `src/ar/filter.ts`, testad: kvaternion från alpha/beta/gamma (three.js-formeln), slerp-utjämning i kvaternionrymd, yaw-offset-komplementärfilter mot `webkitCompassHeading` (τ ≈ 5 s, snappar vid första giltiga värdet), kompass ignoreras vid noggrannhet < 0 eller > 25°, manuell kalibrering (dra i Kalibrera-panelen, sparas i localStorage). 133 tester gröna, `tsc` strikt ren, `npm run build` ok.
+- Djup: `src/depth/depth.json`, enhetligt platshållarvärde 15 m för alla linjer, `estimate: true`, inte researchat.
+- Simulator: `ar.html?sim=1` (eller knappen "Simulator"). Dra = titta runt, WASD/pilar = gå, reglage för riktning/lutning/alpha-origo/kompassbrus/kompassnoggrannhet, tidsspolning (⏸ ×1 ×10 ×60), 12:00/18:00/00:30, "Nästa tåg", förinställda stationer. Växla källa med knappen uppe till höger.
+- Desktop-test: `https://localhost:5174/` är självsignerat och många webbläsare nekar det; kör i stället ren http på localhost: `$env:NO_SSL="1"; npx vite --port 5180` och öppna `http://localhost:5180/ar.html?sim=1`.
+
+### Verifierat / ej verifierat
+- Verifierat i simulatorn (desktop): scenen renderar, tåg syns under marknivå, kantpilar, etiketter, info-panel, tidsspolning, yaw-filtret rättar ett godtyckligt alpha-origo mot kompassen.
+- **Ej verifierat på iPhone:** att `webkitCompassHeading` motsvarar kamerans riktning (upprätt) respektive överkantens riktning (platt) enligt hypotesen i `referenceHeading`; kamerans FOV (60° är en gissning, justera i Kalibrera); GPS mot verkligt spår; prestanda. Klart-kriterium Fas 4 (stå vid riktig station och se ett tåg i ungefär rätt riktning och takt) återstår.
+
+### Fälttest Fas 4 (på iPhone)
+1. Öppna `…/ar.html` över HTTPS, tryck "Starta AR", godkänn kamera/plats/rörelse.
+2. Stå ute vid en station. Notera `kompass: ok/OKALIBRERAD` och "fel" i HUD.
+3. Håll telefonen upprätt, rikta mot norr (kartapp). Röd linje på marken i bilden = norr enligt appen. Justera med Kalibrera (dra) om den pekar fel.
+4. Luta telefonen från upprätt ned mot marken och tillbaka: stannar den röda linjen kvar åt samma håll? Om den vrider sig är referensriktningen fel: kopiera logg och rapportera.
+5. Jämför tågens riktning/takt mot ATM-appen eller tidtabellen vid stationen.

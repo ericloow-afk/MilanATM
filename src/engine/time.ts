@@ -38,3 +38,18 @@ export function addDays(ymd: number, delta: number): number {
 }
 
 export const isoToYmd = (iso: string): number => Number(iso.replaceAll('-', ''));
+
+/** Date för en lokal Rom-tid (ymd = YYYYMMDD, sec = sekunder från lokal midnatt). Motsatsen till romeServiceTime. */
+export function romeDate(ymd: number, sec: number): Date {
+  const y = Math.floor(ymd / 10000);
+  const m = Math.floor((ymd % 10000) / 100);
+  const d = ymd % 100;
+  const asUtc = Date.UTC(y, m - 1, d, 0, 0, 0) + sec * 1000;
+  let guess = asUtc;
+  for (let i = 0; i < 3; i++) {
+    const r = romeServiceTime(new Date(guess));
+    const rAsUtc = Date.UTC(Math.floor(r.ymd / 10000), Math.floor((r.ymd % 10000) / 100) - 1, r.ymd % 100) + r.sec * 1000;
+    guess += asUtc - rAsUtc;
+  }
+  return new Date(guess);
+}

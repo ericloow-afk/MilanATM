@@ -1,0 +1,13 @@
+{
+  "estimate": true,
+  "unit": "m",
+  "note": "Platshållare, inte researchade värden: samma uppskattade djup för alla linjer tills riktiga djup har tagits fram. Alla värden är estimate:true.",
+  "defaultMeters": 15,
+  "lines": {
+    "M1": 15,
+    "M2": 15,
+    "M3": 15,
+    "M4": 15,
+    "M5": 15
+  }
+}

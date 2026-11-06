@@ -263,3 +263,16 @@ describe.skipIf(!real)('verklig metro.json', () => {
     expect(trains(real!, when)).toEqual([]);
   });
 });
+
+import { romeDate } from './time';
+describe('romeDate (invers till romeServiceTime)', () => {
+  it('lokal Rom-tid → rätt UTC, vinter och sommar', () => {
+    expect(romeDate(20261106, 12 * 3600).toISOString()).toBe('2026-11-06T11:00:00.000Z');
+    expect(romeDate(20260701, 12 * 3600).toISOString()).toBe('2026-07-01T10:00:00.000Z');
+    expect(romeDate(20261107, 1800).toISOString()).toBe('2026-11-06T23:30:00.000Z');
+  });
+  it('rundtur ger samma värden', () => {
+    const r = romeServiceTime(romeDate(20261130, 86399));
+    expect(r).toEqual({ ymd: 20261130, sec: 86399 });
+  });
+});
