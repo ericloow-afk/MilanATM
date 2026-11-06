@@ -1,15 +1,18 @@
 import { dataStatus, trains, type MetroData } from '../engine';
 import { isoToYmd, romeDate, romeServiceTime } from '../engine/time';
 import { depthFor } from '../depth';
+import { referenceHeading } from '../geo/orientation';
 import { OrientationFilter } from './filter';
+import { LogRecorder, type LogRow } from './log';
 import { nearbyTrains, type NearbyTrain } from './nearby';
 import { edgeIndicator } from './overlay';
 import { ArScene } from './scene';
 import { RealSource } from './sensors';
 import { SimSource, type SimPlace } from './sim';
-import type { SensorSource } from './source';
+import type { SensorSource, SourceReading } from './source';
 import { ArUi, type LabelItem } from './ui';
 
+const BUILD_ID = typeof __BUILD_ID__ === 'string' ? __BUILD_ID__ : 'dev';
 const RADIUS_M = 300;
 const MANUAL_KEY = 'ar.manualDeg';
 
@@ -27,7 +30,36 @@ let userPos: { lat: number; lon: number } | null = null;
 let lastReadingNow = new Date();
 let gpsAccuracy: number | null = null;
 let statusText = '';
+let lastReading: SourceReading | null = null;
+let trainsInView = 0;
+const recorder = new LogRecorder(30_000, 200);
 const keys = new Set<string>();
+
+/** En loggrad av nuvarande tillstånd (senaste sensoravläsning + filtrets skattning). */
+function makeRow(): LogRow {
+  const r = lastReading;
+  const o = r?.orientation ?? null;
+  return {
+    timeMs: Date.now(),
+    lat: r?.position?.lat ?? null,
+    lon: r?.position?.lon ?? null,
+    gpsAcc: r?.position?.accuracy ?? null,
+    rawCompass: o?.compass ?? null,
+    compassAcc: o?.compassAccuracy ?? null,
+    alpha: o?.alpha ?? null,
+    beta: o?.beta ?? null,
+    gamma: o?.gamma ?? null,
+    filteredYaw: o ? referenceHeading(filter.quaternion) : null,
+    yawOffset: filter.yawDeg,
+    manual: filter.manualDeg,
+    trainsInView,
+    mark: false,
+    source: source?.kind ?? 'real',
+    buildId: BUILD_ID,
+  };
+}
+const recLabel = () =>
+  recorder.active ? `Spelar… ${recorder.remainingSec(Date.now())} s (${recorder.rowCount})` : `Spela in 30 s${recorder.rowCount ? ` (${recorder.rowCount} rader)` : ''}`;
 
 // ---------- hjälpare ----------
 const fmtRome = (d: Date) => {
@@ -68,6 +100,21 @@ const ui: ArUi = new ArUi(uiRoot, canvas, {
     persistManual();
   },
   onFov: (deg) => scene.setFov(deg),
+  onRecord: () => {
+    if (!source) {
+      ui.setRecordUi({ recording: false, label: recLabel(), canCopy: false, note: 'Starta AR eller simulator först.' });
+      return;
+    }
+    recorder.start(Date.now());
+    ui.hideCsv();
+    ui.setCopyLabel('Kopiera logg');
+    ui.setRecordUi({ recording: true, label: recLabel(), canCopy: false, note: 'Tryck Markera när kameran pekar mot känd riktning/ingång.' });
+  },
+  onMark: () => {
+    const ok = recorder.mark(Date.now(), makeRow);
+    ui.setRecordUi({ recording: recorder.active, label: recLabel(), canCopy: false, note: ok ? `Markerat (${recorder.markCount})` : 'Starta inspelning först.' });
+  },
+  onCopy: () => void copyLog(),
   onSelectTrain: () => {},
   onSimJumpNextTrain: () => jumpToNextTrain(),
   onSimTimePreset: (kind) => {
@@ -95,6 +142,18 @@ ui.onLook = (dx, dy) => {
 window.addEventListener('resize', () => scene.resize());
 window.addEventListener('keydown', (e) => keys.add(e.key.toLowerCase()));
 window.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
+
+async function copyLog(): Promise<void> {
+  const csv = recorder.toCsv();
+  try {
+    await navigator.clipboard.writeText(csv);
+    ui.setCopyLabel(`Kopierat! (${recorder.rowCount} rader)`);
+  } catch (e) {
+    source?.errors.push(`urklipp: ${e instanceof Error ? e.message : String(e)}`);
+    ui.showCsv(csv); // markera och kopiera manuellt
+    ui.setCopyLabel('Markera & kopiera ovan');
+  }
+}
 
 // ---------- källor ----------
 function simPlaces(): SimPlace[] {
@@ -162,6 +221,7 @@ function frame(now: number): void {
   if (source && metro) {
     if (source.kind === 'sim') stepSimKeys(source as SimSource, dt);
     const r = source.read(dt);
+    lastReading = r;
     lastReadingNow = r.now;
     if (r.orientation) filter.update(dt, r.orientation);
     scene.setOrientation(filter.quaternion);
@@ -176,6 +236,10 @@ function frame(now: number): void {
     }
     scene.render();
     updateOverlay(r.orientation != null);
+    if (recorder.active) {
+      const done = recorder.tick(Date.now(), makeRow);
+      ui.setRecordUi({ recording: !done, label: recLabel(), canCopy: recorder.rowCount > 0, ...(done ? { note: `Klar: ${recorder.rowCount} rader, ${recorder.markCount} markeringar` } : {}) });
+    }
   } else {
     scene.render();
   }
@@ -212,6 +276,7 @@ function updateOverlay(haveOrientation: boolean): void {
     });
   }
   ui.setLabels(items);
+  trainsInView = items.filter((i) => i.onScreen).length;
 
   // info-panel för valt tåg
   const sel = ui.selectedId();
@@ -247,6 +312,7 @@ function updateOverlay(haveOrientation: boolean): void {
     `tåg ≤${RADIUS_M} m: ${nearby.length}   tid (Rom): ${fmtRome(lastReadingNow)}`,
     `data: ${status} (t.o.m. ${metro.meta.validTo})`,
     `djup ≈ ${depthFor('M1').meters} m (uppskattat) · enligt tidtabell`,
+    `bygge: ${BUILD_ID}`,
   ].join('\n');
   ui.setHud(statusText);
   ui.setCalibrationReadout(`Manuell offset ${filter.manualDeg.toFixed(1)}°, yaw ${filter.yawDeg.toFixed(1)}°`);

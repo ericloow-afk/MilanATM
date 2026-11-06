@@ -12,6 +12,7 @@
     "next": "node tools/next-departures.mjs"
   },
   "dependencies": {
+    "maplibre-gl": "^6.16.0",
     "three": "^0.170.0"
   },
   "devDependencies": {

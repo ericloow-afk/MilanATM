@@ -11,6 +11,9 @@ export interface UiHooks {
   onSelectTrain(id: string | null): void;
   onSimJumpNextTrain(): void;
   onSimTimePreset(kind: 'noon' | 'evening' | 'night'): void;
+  onRecord(): void;
+  onMark(): void;
+  onCopy(): void;
 }
 
 export interface LabelItem {
@@ -42,7 +45,9 @@ export class ArUi {
   readonly console = h('<pre id="errors"></pre>');
   readonly labels = h('<div id="labels"></div>');
   readonly info = h('<div id="info" hidden></div>');
-  readonly toolbar = h(`<div id="toolbar"><button id="b-cal">Kalibrera</button><button id="b-src"></button></div>`);
+  readonly toolbar = h(`<div id="toolbar"><button id="b-cal">Kalibrera</button><button id="b-src"></button>
+      <button id="b-rec">Spela in 30 s</button><button id="b-mark" disabled>Markera</button><button id="b-copy" disabled>Kopiera logg</button>
+      <div id="rec-note"></div><textarea id="csv" readonly hidden></textarea></div>`);
   readonly calPanel = h(`<div class="panel" id="cal" hidden>
       <div>Dra vänster/höger på bilden för att vrida vyn.</div>
       <div id="cal-read"></div>
@@ -88,6 +93,9 @@ export class ArUi {
       this.calPanel.hidden = !this.calPanel.hidden;
     });
     this.$('#cal-reset').addEventListener('click', () => this.hooks.onResetCalibration());
+    this.$('#b-rec').addEventListener('click', () => this.hooks.onRecord());
+    this.$('#b-mark').addEventListener('click', () => this.hooks.onMark());
+    this.$('#b-copy').addEventListener('click', () => this.hooks.onCopy());
     const fov = this.$<HTMLInputElement>('#fov');
     fov.addEventListener('input', () => {
       this.$('#fov-v').textContent = `${fov.value}°`;
@@ -150,6 +158,29 @@ export class ArUi {
   }
   setCalibrationReadout(text: string): void {
     this.$('#cal-read').textContent = text;
+  }
+  /** Inspelningsknapparnas tillstånd och text. */
+  setRecordUi(s: { recording: boolean; label: string; canCopy: boolean; note?: string }): void {
+    const rec = this.$<HTMLButtonElement>('#b-rec');
+    rec.disabled = s.recording;
+    rec.textContent = s.label;
+    this.$<HTMLButtonElement>('#b-mark').disabled = !s.recording;
+    this.$<HTMLButtonElement>('#b-copy').disabled = s.recording || !s.canCopy;
+    if (s.note !== undefined) this.$('#rec-note').textContent = s.note;
+  }
+  setCopyLabel(text: string): void {
+    this.$('#b-copy').textContent = text;
+  }
+  /** Reserv när iOS vägrar urklipp: visa CSV i ett markerat textfält. */
+  showCsv(csv: string): void {
+    const box = this.$<HTMLTextAreaElement>('#csv');
+    box.hidden = false;
+    box.value = csv;
+    box.focus();
+    box.select();
+  }
+  hideCsv(): void {
+    this.$<HTMLTextAreaElement>('#csv').hidden = true;
   }
   hideStart(): void {
     this.startBox.hidden = true;

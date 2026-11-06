@@ -18,13 +18,18 @@
       #hud { position: fixed; left: 8px; top: calc(env(safe-area-inset-top) + 6px); background: rgba(0,0,0,.55); padding: 4px 6px; border-radius: 6px; pointer-events: none; }
       #banner { position: fixed; left: 8px; right: 8px; top: calc(env(safe-area-inset-top) + 110px); background: #b3261e; padding: 6px 10px; border-radius: 6px; font-size: 13px; }
       #errors { position: fixed; left: 8px; right: 8px; bottom: calc(env(safe-area-inset-bottom) + 6px); color: #f88; background: rgba(0,0,0,.5); pointer-events: none; }
-      #toolbar { position: fixed; right: 8px; top: calc(env(safe-area-inset-top) + 6px); display: flex; flex-direction: column; gap: 6px; }
+      #toolbar { position: fixed; right: 8px; top: calc(env(safe-area-inset-top) + 6px); display: flex; flex-direction: column; gap: 6px; align-items: stretch; max-width: 46vw; }
+      #rec-note { font-size: 11px; background: rgba(0,0,0,.55); border-radius: 4px; padding: 0 4px; empty-cells: hide; }
+      #rec-note:empty { display: none; }
+      #csv { width: 46vw; height: 90px; font-size: 10px; }
+      #csv[hidden] { display: none; }
+      #cal { top: calc(env(safe-area-inset-top) + 260px); }
       button, select { font-size: 14px; padding: 6px 10px; }
       .panel { position: fixed; background: rgba(0,0,0,.7); border-radius: 8px; padding: 8px; font-size: 12px; display: flex; flex-direction: column; gap: 6px; }
       .panel[hidden], #info[hidden], #banner[hidden], #start[hidden] { display: none; }
       .panel label { display: flex; align-items: center; gap: 6px; }
       .panel input[type=range] { flex: 1; min-width: 90px; }
-      #cal { right: 8px; top: calc(env(safe-area-inset-top) + 90px); width: 220px; }
+      #cal { right: 8px; width: 220px; }
       #sim { left: 8px; bottom: calc(env(safe-area-inset-bottom) + 70px); width: 300px; }
       .small { font-size: 11px; opacity: .8; }
       #info { position: fixed; left: 8px; right: 8px; bottom: calc(env(safe-area-inset-bottom) + 70px); background: rgba(0,0,0,.8); border-radius: 8px; padding: 10px; font-size: 13px; line-height: 1.5; }

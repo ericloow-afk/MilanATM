@@ -114,3 +114,24 @@ Dev-länken (`https://172.x.x.x:5174`) funkar bara på samma nät. Utomhus anvä
 3. Håll telefonen upprätt, rikta mot norr (kartapp). Röd linje på marken i bilden = norr enligt appen. Justera med Kalibrera (dra) om den pekar fel.
 4. Luta telefonen från upprätt ned mot marken och tillbaka: stannar den röda linjen kvar åt samma håll? Om den vrider sig är referensriktningen fel: kopiera logg och rapportera.
 5. Jämför tågens riktning/takt mot ATM-appen eller tidtabellen vid stationen.
+
+### AR-vyns fältlogg och buildId
+- **Spela in 30 s** (uppe till höger i `ar.html`): en CSV-rad var 200 ms. **Markera** lägger till en extra rad med `mark=1` vid exakt tryckögonblick (bara under inspelning). **Kopiera logg** lägger CSV i urklipp; om iOS vägrar visas ett markerat textfält att kopiera från. Klistra in CSV:n i chatten.
+- Kolumner: `time,lat,lon,gpsAcc,rawCompassHeading,compassAcc,alpha,beta,gamma,filteredYawDeg,yawOffsetDeg,manualDeg,trainsInView,mark,source,buildId`. `filteredYawDeg` = appens skattade kamerariktning (referensriktningen: kamerans riktning upprätt, överkantens riktning platt), `yawOffsetDeg` = automatisk yaw mot kompassen, `manualDeg` = manuell kalibrering, `trainsInView` = tåg med etikett i bild. Tomma fält = värde saknas.
+- **buildId** = byggtid (UTC) från Vite (`__BUILD_ID__`), syns på sista raden i HUD och i varje loggrad. Efter en deploy: ladda om (stäng fliken om Safari cachar) och kontrollera att tiden är ny. I dev sätts den när dev-servern startar.
+- Inget sparas i localStorage utom manuell kalibrering, och det sker i try/catch.
+- Test: `src/ar/log.test.ts` (8 tester). Provkört i simulatorn: CSV-format, markering, buildId och urklippsreserv fungerar; inspelning med riktiga bildrutor kräver att fliken är synlig (den dolda webbläsarpanelen pausar animation).
+
+## Designspår D0 – Strata × Duomo (2026-11-06)
+- `src/styles/tokens.css` (färger mörk/ljus, typografi, spacing, radier, skuggor, z-index, rörelse, Duomo-motiv) och `docs/design.md` (principer). Inte kopplat till några sidor än. Utvecklingen av AR (Fas 4 fälttest) är pausad.
+
+## D1 – Kartvyn (2026-11-06)
+- `map.html` + `src/map/*`: MapLibre GL 6.16 (nytt beroende, godkänt) med egen ljus/mörk stil ovanpå **OpenFreeMap** (vektor-tiles utan nyckel; attribution "OpenFreeMap © OpenMapTiles Data from OpenStreetMap" + "Tidtabell: Comune di Milano / ATM (CC BY 4.0)" visas i attributionskontrollen). Färgerna läses ur `--map-*`-tokens och följer `prefers-color-scheme`. Bundle för kartsidan ≈ 1,1 MB (308 KB gzip).
+- Linjer i GTFS-färg med mörk kontur (grov spårgeometri streckad), stationsprickar (bytesstationer större) med namn som tonar in vid zoom.
+- Tåg som DOM-markörer: färgad cirkel med M1–M5, riktningspil, pulserande ring vid uppehåll, vit ring när valt (`--select-ring`). Motorn körs 1 gång/s med 1 s framförhållning och positionerna interpoleras mellan tick (`src/map/anim.ts`).
+- Bottenpanel (peek/half/full, dra eller piltangenter) för valt tåg: linje, mot terminus, nästa station med nedräkning (avgång vid uppehåll), framsteg längs sträckan, stationsnummer, avstånd till mig. Utan val: lista över tåg närmast (dig/kartans mitt), som också är tangentbordsvägen till tågen.
+- Klockkontroll (live/spola ×1/×10/×60, paus, datum och tid i Rom), badge "Positioner enligt tidtabell", giltighetsfält med dagar kvar, "Min position"-knapp, zoomknappar.
+- Tomma lägen och fel: ingen trafik (nästa tåg + "Spola till första tåget"), tidtabell utgången/inte giltig än ("Visa en giltig dag"), ingen/nekad GPS, tiles som inte laddas (linjer och tåg visas ändå), metro.json som inte laddas (försök igen).
+- Tillgänglighet: skip-länk, aria-label på alla kontroller och markörer, fokus flyttas till panelens rubrik vid val och tillbaka vid stängning (Esc), tåg nås via tåglistan, `prefers-reduced-motion` (ingen pulsering, ingen kamerasvep, ingen mjuk interpolation).
+- Tester: klocka, animation, schema/nedräkning/giltighet, GeoJSON, trafik, panelens lägen. 175 tester gröna, `tsc` ren, `npm run build` ok.
+- Verifierat i webbläsarpanelen (desktop och 375×812, mörkt och ljust): kartan renderar, tåg på linjerna, val av tåg och panel, nattläge, utgången tidtabell. **Ej verifierat på iPhone** (touch-drag av panelen, safe areas, prestanda med ~120 markörer, GPS). Ren http på localhost för desktop-test: `$env:NO_SSL="1"; npx vite --port 5180`, öppna `http://localhost:5180/map.html`.
