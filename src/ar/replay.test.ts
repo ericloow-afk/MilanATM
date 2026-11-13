@@ -119,3 +119,15 @@ describe('grindar och parametrar', () => {
     expect(win(r, '20:15:16.6', '20:15:17.4').some((p) => p.state === 'jump')).toBe(true);
   });
 });
+
+describe('deklination (declinationDeg, standard 0)', () => {
+  it('standard är 0: beteendet är oförändrat', () => {
+    expect(DEFAULT_FILTER_CONFIG.declinationDeg).toBe(0);
+  });
+  it('+3,7° (Milano) flyttar yaw-offseten exakt 3,7° i varje sample; stabilitetsmåtten ändras inte', () => {
+    const d = replay(rows, { declinationDeg: 3.7 });
+    for (let i = 0; i < run.length; i++) expect(wrap180(d[i].yaw - run[i].yaw)).toBeCloseTo(3.7, 6);
+    expect(d.map((p) => p.state)).toEqual(run.map((p) => p.state));
+    expect(range(win(d, '20:15:16.0', '20:15:17.6').map((p) => p.yaw))).toBeCloseTo(range(win(run, '20:15:16.0', '20:15:17.6').map((p) => p.yaw)), 6);
+  });
+});

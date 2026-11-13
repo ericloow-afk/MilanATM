@@ -44,6 +44,12 @@ export interface FilterConfig {
   innovationLimitDeg: number;
   /** om skattningar avvisas oavbrutet så här länge (s) accepteras den nya nivån (offseten har flyttat sig på riktigt) */
   reacquireAfterSec: number;
+  /**
+   * Magnetisk deklination (grader, öst positiv) som läggs till kompassen: sann = magnetisk + deklination.
+   * Milano: +3,7° (NOAA WMM-2025, nov 2026). Standard 0 = kompassen används rakt av som tidigare, tills ett fältprov
+   * visar att korrigeringen blir bättre (docs/field-notes-2026-11-08.md).
+   */
+  declinationDeg: number;
 }
 
 export const DEFAULT_FILTER_CONFIG: FilterConfig = {
@@ -56,6 +62,7 @@ export const DEFAULT_FILTER_CONFIG: FilterConfig = {
   maxRateDegPerSec: 120,
   innovationLimitDeg: 45,
   reacquireAfterSec: 4,
+  declinationDeg: 0,
 };
 
 /** Bakåtkompatibelt alias: delmängd av FilterConfig. */
@@ -124,7 +131,7 @@ export class OrientationFilter {
     if (this.elevationDeg > c.maxElevationDeg) return reject('looking-up');
     if (this.rateDegPerSec > c.maxRateDegPerSec) return reject('moving');
 
-    const e = wrap180(s.compass + this.manual - (referenceHeading(raw) + this.yaw));
+    const e = wrap180(s.compass + c.declinationDeg + this.manual - (referenceHeading(raw) + this.yaw));
     if (!this.haveYaw) {
       this.yaw += e; // första giltiga värdet: snappa
       this.haveYaw = true;
