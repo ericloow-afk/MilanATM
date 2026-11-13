@@ -1,0 +1,17 @@
+{
+  "note": "Enda anropet mot Giromilano 2026-11-13. Svaret var 403 (Akamai). Enligt projektreglerna stoppades proben direkt; inga fler anrop, inga andra headers.",
+  "requests": [
+    {
+      "method": "GET",
+      "url": "https://giromilano.atm.it/proxy.tpportal/api/tpPortal/tpl/stops/-308/linesummary",
+      "requestHeaders": { "User-Agent": "MilanoMetroAR-hobby/0.1", "Accept": "application/json" },
+      "cookies": "inga",
+      "sentAt": "2026-11-13T22:17:00Z",
+      "localTimeRome": "2026-11-13 23:17 (fredag kväll)",
+      "status": 403,
+      "contentType": "text/html",
+      "body": "-308-linesummary.body.html",
+      "headers": "-308-linesummary.headers.txt"
+    }
+  ]
+}
