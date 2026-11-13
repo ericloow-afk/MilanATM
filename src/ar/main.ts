@@ -10,6 +10,8 @@ import { isoToYmd, romeDate, romeServiceTime } from '../engine/time';
 import { depthFor } from '../depth';
 import { referenceHeading } from '../geo/orientation';
 import { OrientationFilter } from './filter';
+import { aimHint, shouldShowAim } from './aim';
+import { AR_CONFIG } from './config';
 import { GpsFilter, GpsStatus } from './gps-filter';
 import { LogRecorder, type LogRow } from './log';
 import { nearbyTrains, type NearbyTrain } from './nearby';
@@ -27,7 +29,8 @@ import { haversine } from '../geo';
 
 const BUILD_ID = typeof __BUILD_ID__ === 'string' ? __BUILD_ID__ : 'dev';
 const DEBUG = new URLSearchParams(location.search).get('debug') === '1';
-const RADIUS_M = 300;
+const RADIUS_M = AR_CONFIG.radiusM;
+let fovDeg: number = AR_CONFIG.fovVerticalDeg;
 const MANUAL_KEY = 'ar.manualDeg';
 
 const canvas = document.getElementById('gl') as HTMLCanvasElement;
@@ -36,6 +39,7 @@ const bg = document.getElementById('bg') as HTMLElement;
 const uiRoot = document.getElementById('ui') as HTMLElement;
 
 const scene = new ArScene(canvas);
+scene.setFov(AR_CONFIG.fovVerticalDeg);
 const filter = new OrientationFilter();
 let metro: MetroData | null = null;
 let rt: RealtimeSession | null = null;
@@ -118,7 +122,10 @@ const ui: ArUi = new ArUi(uiRoot, canvas, {
     filter.resetManual();
     persistManual();
   },
-  onFov: (deg) => scene.setFov(deg),
+  onFov: (deg) => {
+    fovDeg = deg;
+    scene.setFov(deg);
+  },
   onRecord: () => {
     if (!source) {
       ui.setRecordUi({ recording: false, label: recLabel(), canCopy: false, note: 'Starta AR eller simulator först.' });
@@ -432,6 +439,9 @@ function updateOverlay(haveOrientation: boolean): void {
   }
   ui.setLabels(items);
   trainsInView = items.filter((i) => i.onScreen).length;
+  // Tåg finns men inget syns: säg åt vilket håll (oftast nedåt, tågen går ca 15 m under gatan)
+  const nearestView = nearby.length ? scene.viewOf(nearby[0].train.id) : null;
+  ui.setAim(nearestView && shouldShowAim(nearby.length, trainsInView, haveOrientation) ? aimHint(nearestView.x, nearestView.y, nearestView.behind) : null);
 
   // info-panel för valt tåg
   const sel = ui.selectedId();
@@ -464,6 +474,7 @@ function updateOverlay(haveOrientation: boolean): void {
     uncalibrated: 'okalibrerad (ignoreras)',
     inaccurate: 'för osäker (ignoreras)',
     'looking-up': 'tittar uppåt (ignoreras)',
+    'looking-down': 'tittar brant nedåt (ignoreras)',
     moving: 'snabb vridning (ignoreras)',
     jump: 'språng avvisat',
     none: 'saknas',
@@ -480,6 +491,7 @@ function updateOverlay(haveOrientation: boolean): void {
       ['Tid (Rom)', fmtRome(lastReadingNow)],
       ['Tidtabell', `${statusText}, till ${fmtDate(metro.meta.validTo)}`],
       ['Djup', `ca ${depthFor('M1').meters} m (uppskattat)`],
+      ['Synfält', `${fovDeg}° lodrätt${fovDeg === AR_CONFIG.fovVerticalDeg ? ' (uppmätt ca, stående)' : ' (kalibrerat)'}`],
       ['Bygge', BUILD_ID],
     ],
   };

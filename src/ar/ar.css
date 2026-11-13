@@ -85,3 +85,10 @@ html, body { height: 100%; overflow: hidden; touch-action: none; }
 .arrive-titles { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .arrive-titles strong { font-size: var(--fs-md); }
 .arrive-titles .muted { font-size: var(--fs-xs); }
+
+/* ---------- "Rikta telefonen nedåt" ---------- */
+.aim { position: fixed; left: 50%; top: 58%; transform: translateX(-50%); z-index: var(--z-panel); display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-4); min-height: var(--tap-min); box-sizing: border-box; font-weight: var(--fw-semibold); font-size: var(--fs-md); white-space: nowrap; pointer-events: none; }
+.aim[hidden] { display: none; }
+.aim-arrow { flex: none; width: 18px; height: 18px; position: relative; }
+.aim-arrow::before { content: ''; position: absolute; left: 1px; top: 8px; width: 13px; height: 2px; background: var(--text); }
+.aim-arrow::after { content: ''; position: absolute; right: 1px; top: 4px; width: 8px; height: 8px; border-top: 2px solid var(--text); border-right: 2px solid var(--text); transform: rotate(45deg); }

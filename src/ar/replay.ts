@@ -76,6 +76,68 @@ export function replay(rows: LogRow[], opts: FilterOptions = {}): ReplayPoint[] 
   return out;
 }
 
+/** En period då kameran tittade brant nedåt, och hur offseten betedde sig runt den. */
+export interface TiltEpisode {
+  start: number;
+  end: number;
+  /** lägsta kamerahöjd (grader) */
+  minElevation: number;
+  betaFrom: number;
+  betaTo: number;
+  /** filtrets offset i början och slutet av perioden */
+  yawStart: number;
+  yawEnd: number;
+  /** kompassens uppmätta offset (median) i upprätt läge 3 s före och efter perioden */
+  measBefore: number | null;
+  measAfter: number | null;
+  /** filtrets offset när kameran är upprätt igen, och dess fel mot kompassen då */
+  yawAtReturn: number | null;
+  errAtReturn: number | null;
+}
+
+/**
+ * Hittar perioder där kameran tittar brantare nedåt än `steepDeg` under horisonten (minst 1 s).
+ * Används för att avgöra om offsetens glidning vid brant lutning är ett modellfel (kompassen upprätt efteråt
+ * stämmer med före) eller en verklig förändring (kompassen upprätt efteråt har också flyttat sig).
+ */
+export function tiltEpisodes(pts: ReplayPoint[], steepDeg = 40): TiltEpisode[] {
+  const med = (xs: number[]) => (xs.length ? [...xs].sort((a, b) => a - b)[xs.length >> 1] : null);
+  const upright = (p: ReplayPoint) => p.elevation > -30 && p.elevation < 20 && p.measured != null && (p.headingAcc ?? 0) <= 25;
+  const out: TiltEpisode[] = [];
+  let i = 0;
+  while (i < pts.length) {
+    if (pts[i].elevation >= -steepDeg) {
+      i++;
+      continue;
+    }
+    let j = i;
+    while (j + 1 < pts.length && pts[j + 1].elevation < -steepDeg) j++;
+    const a = pts[i];
+    const b = pts[j];
+    if (b.t - a.t >= 1000) {
+      const before = pts.filter((p) => p.t < a.t && p.t >= a.t - 3000 && upright(p)).map((p) => p.measured!);
+      const afterPts = pts.filter((p) => p.t > b.t && p.t <= b.t + 3000 && upright(p));
+      const measAfter = med(afterPts.map((p) => p.measured!));
+      const ret = afterPts[0] ?? null;
+      out.push({
+        start: a.t,
+        end: b.t,
+        minElevation: Math.min(...pts.slice(i, j + 1).map((p) => p.elevation)),
+        betaFrom: a.beta,
+        betaTo: b.beta,
+        yawStart: a.yaw,
+        yawEnd: b.yaw,
+        measBefore: med(before),
+        measAfter,
+        yawAtReturn: ret ? ret.yaw : null,
+        errAtReturn: ret && measAfter != null ? Math.abs(wrap180(ret.yaw - measAfter)) : null,
+      });
+    }
+    i = j + 1;
+  }
+  return out;
+}
+
 /** En rad ur AR-vyns egen logg ("Spela in 30 s", kolumnerna i src/ar/log.ts). Tomma fält blir null. */
 export interface ArLogRow {
   t: number;

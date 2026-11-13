@@ -1,9 +1,9 @@
 // Användning: npm run replay   (vite-node tools/filter-replay-report.ts)
 // Kör AR-filtret över sensorloggen och skriver docs/filter-replay.md.
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { wrap180 } from '../src/geo/orientation';
 import { DEFAULT_FILTER_CONFIG } from '../src/ar/filter';
-import { parseSensorCsv, replay, type ReplayPoint } from '../src/ar/replay';
+import { arRowsForReplay, parseArLogCsv, parseSensorCsv, replay, tiltEpisodes, type ReplayPoint } from '../src/ar/replay';
 
 const CSV = 'test/fixtures/sensor-log-indoor-2026-11-06.csv';
 const rows = parseSensorCsv(readFileSync(CSV, 'utf8'));
@@ -118,6 +118,32 @@ L.push(
   '- Loggen är **inomhus** och 5 Hz. Riktiga sensorhändelser kommer ofta med ~60 Hz; tauQ (0,1 s) är avsedd för det och ger nästan ingen utjämning vid 5 Hz.',
   '- Vi har ingen sann riktning (facit), bara kompass och gyro. "rms" mäter därför bara hur tätt skattningen följer kompassen, inte hur rätt den är.',
   '- Loggen innehåller en kompassvändning upp och en ned. Lutning åt andra håll och andra sätt att hålla telefonen är inte provade.',
+);
+// ---------- lutning nedåt (fältmätningen 8/11) ----------
+L.push('', '## Lutning nedåt: glider offseten?', '');
+L.push(
+  'Fältloggen från Dergano (8/11) visade att yawOffset gled ca 9° (−102° → −110°) när beta gick 46° → 15° på 10 s. Frågan är om det är ett modellfel vid brant lutning (då hjälper det att frysa korrigeringen, `minElevationDeg`) eller en verklig förändring av offseten (då ska filtret följa med). Mått: offsetens ändring under perioden, kompassens uppmätta offset i upprätt läge 3 s före och efter, och filtrets fel mot den när kameran är upprätt igen. Lägre fel vid återkomsten är bättre.',
+  '',
+);
+L.push('| logg | period | lägsta kamerahöjd | yaw före → efter | kompass upprätt före / efter | fel vid återkomst: standard | med spärr 40° |', '|---|---|---|---|---|---|---|');
+const tiltRow = (name: string, rowsIn: Parameters<typeof replay>[0]) => {
+  const std = tiltEpisodes(replay(rowsIn));
+  const gated = tiltEpisodes(replay(rowsIn, { minElevationDeg: 40 }));
+  if (!std.length) L.push(`| ${name} | ingen period under −40° | | | | | |`);
+  std.forEach((e, k) => {
+    const g = gated[k];
+    L.push(
+      `| ${name} | ${clock(e.start)}–${clock(e.end)} | ${e.minElevation.toFixed(0)}° | ${f1(e.yawStart)} → ${f1(e.yawEnd)} | ${e.measBefore == null ? '–' : f1(e.measBefore)} / ${e.measAfter == null ? '–' : f1(e.measAfter)} | ${e.errAtReturn == null ? '–' : f1(e.errAtReturn) + '°'} | ${g?.errAtReturn == null ? '–' : f1(g.errAtReturn) + '°'} |`,
+    );
+  });
+};
+tiltRow('inomhus 6/11', rows);
+const fieldFiles = readdirSync('test/fixtures').filter((f) => /^field-2026-11-08-.*\.csv$/.test(f));
+for (const f of fieldFiles) tiltRow(f, arRowsForReplay(parseArLogCsv(readFileSync(`test/fixtures/${f}`, 'utf8'))));
+if (!fieldFiles.length) L.push('| fältloggarna 8/11 | saknas i test/fixtures/ (lägg dem där och kör `npm run replay` igen) | | | | | |');
+L.push(
+  '',
+  'Inomhusloggen: offseten glider ca 8° medan kameran tittar ned, men kompassens offset i upprätt läge efteråt har flyttat sig lika mycket (70,5° → 77,2°). Glidningen följer alltså en verklig förändring, troligen att iOS gyro-alpha driver mot kompassen, och spärren gör felet vid återkomsten större (2,0° → 9,4°). **Spärren är därför avstängd** (`minElevationDeg: null`). Slå på den bara om fältloggarna visar lägre fel med spärren.',
 );
 writeFileSync('docs/filter-replay.md', L.join('\n') + '\n');
 console.log(L.slice(0, 24).join('\n'));

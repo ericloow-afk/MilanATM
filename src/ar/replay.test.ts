@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import csv from '../../test/fixtures/sensor-log-indoor-2026-11-06.csv?raw';
 import { wrap180 } from '../geo/orientation';
 import { DEFAULT_FILTER_CONFIG } from './filter';
-import { parseSensorCsv, replay, type ReplayPoint } from './replay';
+import { parseSensorCsv, replay, tiltEpisodes, type ReplayPoint } from './replay';
 
 const rows = parseSensorCsv(csv);
 const run = replay(rows);
@@ -129,5 +129,24 @@ describe('deklination (declinationDeg, standard 0)', () => {
     for (let i = 0; i < run.length; i++) expect(wrap180(d[i].yaw - run[i].yaw)).toBeCloseTo(3.7, 6);
     expect(d.map((p) => p.state)).toEqual(run.map((p) => p.state));
     expect(range(win(d, '20:15:16.0', '20:15:17.6').map((p) => p.yaw))).toBeCloseTo(range(win(run, '20:15:16.0', '20:15:17.6').map((p) => p.yaw)), 6);
+  });
+});
+
+describe('lutning nedåt: offsetens glidning (Dergano-loggen visade ca 9° när beta gick 46° → 15°)', () => {
+  const eps = tiltEpisodes(run);
+  it('inomhusloggen har en lång period med blicken brant nedåt där offseten glider ca 8°', () => {
+    expect(eps).toHaveLength(1);
+    expect(eps[0].end - eps[0].start).toBeGreaterThan(10_000);
+    expect(eps[0].yawEnd - eps[0].yawStart).toBeGreaterThan(6);
+  });
+  it('men kompassens offset i upprätt läge har flyttat lika mycket efteråt: glidningen följer en verklig förändring', () => {
+    expect(eps[0].measAfter! - eps[0].measBefore!).toBeGreaterThan(5);
+    expect(eps[0].errAtReturn!).toBeLessThan(3);
+  });
+  it('spärren (minElevationDeg 40) gör felet vid återkomsten större: den är därför avstängd som standard', () => {
+    const gated = tiltEpisodes(replay(rows, { minElevationDeg: 40 }));
+    expect(gated[0].yawEnd - gated[0].yawStart).toBeLessThan(1);
+    expect(gated[0].errAtReturn!).toBeGreaterThan(eps[0].errAtReturn! + 5);
+    expect(DEFAULT_FILTER_CONFIG.minElevationDeg).toBeNull();
   });
 });

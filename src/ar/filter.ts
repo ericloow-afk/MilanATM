@@ -22,7 +22,7 @@ export interface OrientationSample {
 }
 
 /** Varför kompassen användes eller ignorerades i senaste samplet. */
-export type CompassState = 'none' | 'uncalibrated' | 'inaccurate' | 'looking-up' | 'moving' | 'jump' | 'ok';
+export type CompassState = 'none' | 'uncalibrated' | 'inaccurate' | 'looking-up' | 'looking-down' | 'moving' | 'jump' | 'ok';
 
 /** Alla justerbara parametrar på ett ställe. Ändra här (eller skicka delar av objektet till OrientationFilter). */
 export interface FilterConfig {
@@ -50,6 +50,13 @@ export interface FilterConfig {
    * visar att korrigeringen blir bättre (docs/field-notes-2026-11-08.md).
    */
   declinationDeg: number;
+  /**
+   * FÖRSLAG, avstängt (null): kompassen ignoreras när kameran tittar brantare nedåt än så här (grader under horisonten).
+   * Fältloggen från Dergano visar att offseten gled ca 9° när beta gick 46° → 15°. Inomhusloggen visar samma glidning,
+   * men där låg kompassens offset lika högt i upprätt läge efteråt, så spärren gjorde felet större. Slås på först om
+   * replay mot fältloggarna visar förbättring (docs/filter-replay.md, "Lutning nedåt").
+   */
+  minElevationDeg: number | null;
 }
 
 export const DEFAULT_FILTER_CONFIG: FilterConfig = {
@@ -63,6 +70,7 @@ export const DEFAULT_FILTER_CONFIG: FilterConfig = {
   innovationLimitDeg: 45,
   reacquireAfterSec: 4,
   declinationDeg: 0,
+  minElevationDeg: null,
 };
 
 /** Bakåtkompatibelt alias: delmängd av FilterConfig. */
@@ -129,6 +137,7 @@ export class OrientationFilter {
     if (s.compassAccuracy != null && s.compassAccuracy < 0) return reject('uncalibrated');
     if (s.compassAccuracy != null && s.compassAccuracy > c.maxCompassAccuracy) return reject('inaccurate');
     if (this.elevationDeg > c.maxElevationDeg) return reject('looking-up');
+    if (c.minElevationDeg != null && this.elevationDeg < -c.minElevationDeg) return reject('looking-down');
     if (this.rateDegPerSec > c.maxRateDegPerSec) return reject('moving');
 
     const e = wrap180(s.compass + c.declinationDeg + this.manual - (referenceHeading(raw) + this.yaw));

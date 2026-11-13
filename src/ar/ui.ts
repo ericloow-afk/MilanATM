@@ -69,6 +69,8 @@ export class ArUi {
       <pre class="errors panel" id="errors" hidden></pre>
     </div>`);
   readonly banner = h('<div id="banner" class="panel" role="status" hidden></div>');
+  /** "Rikta telefonen nedåt": tåg finns inom radien men inget syns i bild */
+  readonly aim = h('<div id="aim" class="aim panel" role="status" aria-live="polite" hidden><span class="aim-arrow" aria-hidden="true"></span><span class="aim-text"></span></div>');
   readonly info = h('<div id="info" class="panel" role="region" aria-label="Valt tåg" hidden></div>');
   readonly toolbar = h(`<div id="toolbar">
       <button type="button" class="btn" id="b-cal">Kalibrera</button>
@@ -86,7 +88,7 @@ export class ArUi {
   readonly calPanel = h(`<div class="cal panel" id="cal" role="region" aria-label="Kalibrering" hidden>
       <p class="muted">Dra vänster eller höger på bilden för att vrida vyn.</p>
       <div class="muted num" id="cal-read"></div>
-      <label class="ctl"><span class="ctl-row"><span>Synfält (lodrätt)</span><span class="num" id="fov-v">60°</span></span><input class="range" id="fov" type="range" min="35" max="90" value="60"></label>
+      <label class="ctl"><span class="ctl-row"><span>Synfält (lodrätt)</span><span class="num" id="fov-v">64°</span></span><input class="range" id="fov" type="range" min="35" max="90" value="64"></label>
       <div class="row2"><button type="button" class="btn secondary" id="cal-reset">Återställ</button><button type="button" class="btn" id="cal-close">Klar</button></div>
     </div>`);
   /** "Tåget kom nu" för närmaste station (innehållet ritas av main.ts med src/ui/arrivals.ts) */
@@ -135,7 +137,7 @@ export class ArUi {
     private debug = false,
   ) {
     this.hudBox.insertBefore(this.banner, this.hudBox.querySelector('#hud-details')); // banner staplas under HUD-raden, aldrig ovanpå utfälld text
-    root.append(this.labels, this.hudBox, this.info, this.toolbar, this.calPanel, this.arrivePanel, this.simSheet, this.startBox);
+    root.append(this.labels, this.aim, this.hudBox, this.info, this.toolbar, this.calPanel, this.arrivePanel, this.simSheet, this.startBox);
     this.toolbar.hidden = true;
     this.hudBox.hidden = true;
     this.bind();
@@ -286,6 +288,16 @@ export class ArUi {
       this.info.innerHTML = html;
     }
     this.info.hidden = false;
+  }
+
+  /** Raden "Rikta telefonen nedåt" (null = dölj). Döljs också när en panel ligger i nederkanten. */
+  setAim(hint: { text: string; angleRad: number } | null): void {
+    const show = !!hint && this.info.hidden && this.calPanel.hidden && this.arrivePanel.hidden;
+    this.aim.hidden = !show;
+    if (!show || !hint) return;
+    const t = this.aim.querySelector('.aim-text') as HTMLElement;
+    if (t.textContent !== hint.text) t.textContent = hint.text;
+    (this.aim.querySelector('.aim-arrow') as HTMLElement).style.transform = `rotate(${hint.angleRad.toFixed(3)}rad)`;
   }
 
   setBanner(text: string | null): void {

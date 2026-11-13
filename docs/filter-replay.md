@@ -15,6 +15,8 @@ Logg: `test/fixtures/sensor-log-indoor-2026-11-06.csv` (144 samples, ca 5 Hz, 30
 | maxRateDegPerSec | 120 | kompass ignoreras vid snabbare vridning (°/s) |
 | innovationLimitDeg | 45 | skattning som avviker mer än så här (°) från offseten avvisas |
 | reacquireAfterSec | 4 | avvisas oavbrutet så här länge: ta den nya nivån (s) |
+| declinationDeg | 0 | undefined |
+| minElevationDeg | null | undefined |
 
 Alla ändras på ett ställe: `new OrientationFilter({ tauYaw: 3, ... })` eller `DEFAULT_FILTER_CONFIG`.
 
@@ -97,3 +99,14 @@ rms = RMS-avstånd mellan skattning och uppmätt offset när kompassen användes
 - Loggen är **inomhus** och 5 Hz. Riktiga sensorhändelser kommer ofta med ~60 Hz; tauQ (0,1 s) är avsedd för det och ger nästan ingen utjämning vid 5 Hz.
 - Vi har ingen sann riktning (facit), bara kompass och gyro. "rms" mäter därför bara hur tätt skattningen följer kompassen, inte hur rätt den är.
 - Loggen innehåller en kompassvändning upp och en ned. Lutning åt andra håll och andra sätt att hålla telefonen är inte provade.
+
+## Lutning nedåt: glider offseten?
+
+Fältloggen från Dergano (8/11) visade att yawOffset gled ca 9° (−102° → −110°) när beta gick 46° → 15° på 10 s. Frågan är om det är ett modellfel vid brant lutning (då hjälper det att frysa korrigeringen, `minElevationDeg`) eller en verklig förändring av offseten (då ska filtret följa med). Mått: offsetens ändring under perioden, kompassens uppmätta offset i upprätt läge 3 s före och efter, och filtrets fel mot den när kameran är upprätt igen. Lägre fel vid återkomsten är bättre.
+
+| logg | period | lägsta kamerahöjd | yaw före → efter | kompass upprätt före / efter | fel vid återkomst: standard | med spärr 40° |
+|---|---|---|---|---|---|---|
+| inomhus 6/11 | 20:14:58.77–20:15:14.94 | -87° | 67.4 → 75.2 | 70.5 / 77.2 | 2.0° | 9.4° |
+| fältloggarna 8/11 | saknas i test/fixtures/ (lägg dem där och kör `npm run replay` igen) | | | | | |
+
+Inomhusloggen: offseten glider ca 8° medan kameran tittar ned, men kompassens offset i upprätt läge efteråt har flyttat sig lika mycket (70,5° → 77,2°). Glidningen följer alltså en verklig förändring, troligen att iOS gyro-alpha driver mot kompassen, och spärren gör felet vid återkomsten större (2,0° → 9,4°). **Spärren är därför avstängd** (`minElevationDeg: null`). Slå på den bara om fältloggarna visar lägre fel med spärren.
