@@ -59,7 +59,18 @@ GTFS-färgen är källan (M1 `#ff0000`, M2 `#73ff01`, M3 `#fcff01`, M4 `#0000ee`
 - **Startvy:** rubrik, en mening ("Tågen under dina fötter, beräknade ur tidtabellen. Positionerna är ungefärliga."), en primär knapp ("Starta AR") och en sekundär ("Simulator").
 - **HUD:** en rad ("2 tåg inom 300 m"); tryck fäller ut tekniken (GPS, kompass, tid, tidtabell, djup, bygge). `?debug=1` öppnar den och verktygen från start.
 - **Knappar:** "Kalibrera" syns i sensorläge. Utvecklarverktygen (Spela in 30 s, Markera, Kopiera logg) ligger bakom "Verktyg".
-- **Simulator:** nedfällbar bottenpanel, stängd som standard med handtag. Egna reglage, segmenterade val och platsknappar. Etiketter och kantpilar ligger under panelerna.
+- **Simulator:** nedfällbar bottenpanel, stängd som standard med handtag. Egna reglage, segmenterade val och platsknappar. Etiketter och kantpilar ligger under panelerna. Bakgrunden i simulatorn är enfärgad, så att den inte förväxlas med scenens rutnät.
+- **Kamerabilden går först (2026-11-14):**
+  - Inga fyllda ytor i scenen. Ett fyllt markplan färgade bilden blå (docs/field-notes-2026-11-08.md, Del 5).
+  - Bara tågblocken och tunna linjer: spårlinjen i linjefärg och en lodlinje till varje tåg.
+  - Allt som inte är ett tåg har högst 0,25 i opacitet och skriver inte djup.
+  - Rutnätet är av som standard ("Rutnät: av/svagt/normalt" i Verktyg). Påslaget syns det bara i ett band ca 30 m runt spåret, tonas ut 40–80 m från kameran och syns aldrig mot horisonten. Det ritas inte utan tåg inom 300 m eller utan GPS-fix.
+- **"Rikta telefonen nedåt":** en rad med pil mitt i bilden när tåg finns inom 300 m men inget syns. Varianter: uppåt, vänster, höger, "Tåget är bakom dig". Den döljs när en panel ligger i nederkanten.
+- **Svag GPS:** läggs till i HUD-raden ("· Svag GPS ±45 m") och döljer aldrig tågen. Utan användbar fix i 5 s visas en dämpad banner (grå kant, inte varningsgul): "Ingen GPS-fix. Är du på en perrong?" med knappen "Välj station".
+- **Perrongläget:**
+  - Ingång: "Jag står på en perrong" på startvyn eller "Perrong" i verktygsfältet.
+  - Stationsväljaren fyller skärmen som en modal, och bakgrunden är `inert` medan den är öppen. Den har en sökruta, "Närmast" med GPS och "Förinställda" i simulatorn. Sedan kommer riktningen, med linje, slutstation och "kommer från".
+  - Perrongkortet ligger i nederkanten, så att horisonten där tåget kommer ut ur tunneln är fri. Det visar station, riktning och "Nästa tåg om mm:ss" med källa, och knappen "Rikta längs spåret" (primär), som byts mot "Rikta om" (sekundär) när vyn är riktad.
 
 ## Rörelse och tillgänglighet
 - Inga dekorativa animationer. Kvar: rotation av laddningsikonen och en kort panel-glidning (`--dur-slow`); båda avstängda med `prefers-reduced-motion`. Markörerna rör sig för att tågen rör sig; med reducerad rörelse uppdateras de en gång per sekund.

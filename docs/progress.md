@@ -202,3 +202,29 @@ Ingen ny funktionalitet; motor, geo och metro.json är orörda. Mer i `docs/desi
   - Skärmdumpar i 390×844 av kartan och AR-simulatorn i lägena tidtabell, justerad och live (mock).
   - Mock och påhittad linjestatus finns inte i produktionsbygget.
 - **Ej verifierat:** på iPhone, och FPS i Safari. Webbläsarpanelen pausar bildrutor när den är dold, så bara JS-tiden är mätt. Hur väl ±10 min-matchningen träffar rätt tåg i verklig trafik visar loggen först efter fältbruk.
+
+## AR ute och på perrongen (gren station-mode, 2026-11-14)
+Fältloggarna från 8/11 fanns inte i repot. Testerna för Del 2 och 3 är syntetiska och märkta så. Testerna mot de riktiga loggarna (`src/ar/field.test.ts`, `npm run replay`) körs när filerna läggs i `test/fixtures/`. Detaljer i `docs/field-notes-2026-11-08.md`.
+
+- **Del 1, spårets bäring:**
+  - `tools/track-bearing.mjs` ger bäringen ur shapen. M3 vid Dergano är 334,3°/154,3° och vid Maciachini 332,7°/152,7°. Det stämmer med den raka linjen inom 1,3°, men kompassmarkeringen 169° ligger ca 15° ifrån.
+  - Deklinationen korrigeras inte. Milano har +3,71° (NOAA WMM-2025). `declinationDeg` finns som inställning med standard 0.
+- **Del 2, GPS-filter:** se Del 2–4 i fältanteckningarna. "Svag GPS ±N m" visas i HUD över 30 m. Simulatorn har ett GPS-reglage (±8 m, ±45 m, ingen fix).
+- **Del 3:**
+  - Synfältet är en konstant på 64°.
+  - "Rikta telefonen nedåt" med pil.
+  - Yaw-glidningen är utredd med replay. Spärren är inte påslagen, eftersom den gör saken sämre på inomhusloggen.
+- **Del 4, perrongläget:**
+  - Stationsväljare med sökning, närmaste och förinställda stationer, och riktningsväljare.
+  - Position = stationen, tåg på perrongnivå (0,3 m under ögonhöjd, uppskattning).
+  - "Rikta längs spåret" med bara gyro, och "Nästa tåg om mm:ss" som tar med manuell justering.
+  - En dämpad banner efter 5 s utan fix.
+  - `?sim=1&perrong=1`.
+- **Del 5, blått fält:** orsaken var det fyllda markplanet. Nu finns bara tunna linjer, och rutnätet ritas i ett band runt spåret och är av som standard.
+- **Verifierat:**
+  - 334 enhetstester (1 hoppas över: fältloggarna saknas), tsc och bygget.
+  - Interaktionstestet har 18 fall, varav ett nytt för perrongläget.
+  - Kostnad: rutnätsbygget ca 1,4 ms och spåren ca 0,5 ms, högst en gång per sekund och bara vid förflyttning. Inget nytt per bildruta.
+  - Kartan är inte ändrad i den här grenen.
+  - Skärmdumpar i 390×844.
+- **Ej verifierat:** på iPhone, och mot de riktiga fältloggarna.
