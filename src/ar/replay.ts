@@ -75,3 +75,69 @@ export function replay(rows: LogRow[], opts: FilterOptions = {}): ReplayPoint[] 
   }
   return out;
 }
+
+/** En rad ur AR-vyns egen logg ("Spela in 30 s", kolumnerna i src/ar/log.ts). Tomma fält blir null. */
+export interface ArLogRow {
+  t: number;
+  lat: number | null;
+  lon: number | null;
+  gpsAcc: number | null;
+  compass: number | null;
+  compassAcc: number | null;
+  alpha: number;
+  beta: number;
+  gamma: number;
+  yawOffset: number | null;
+  trainsInView: number | null;
+  mark: boolean;
+}
+
+/** Läser AR-loggen (fältloggarna test/fixtures/field-*.csv). Kolumner hittas på namn, så nya kolumner i slutet går bra. */
+export function parseArLogCsv(text: string): ArLogRow[] {
+  const lines = text.trim().split(/\r?\n/);
+  const head = lines[0].split(',').map((h) => h.trim());
+  const ix = (n: string) => head.indexOf(n);
+  const num = (f: string[], n: string): number | null => {
+    const i = ix(n);
+    if (i < 0 || f[i] === undefined || f[i] === '') return null;
+    const v = Number(f[i]);
+    return Number.isFinite(v) ? v : null;
+  };
+  return lines
+    .slice(1)
+    .map((l) => l.split(','))
+    .map((f) => ({
+      t: Date.parse(f[ix('time')]),
+      lat: num(f, 'lat'),
+      lon: num(f, 'lon'),
+      gpsAcc: num(f, 'gpsAcc'),
+      compass: num(f, 'rawCompassHeading'),
+      compassAcc: num(f, 'compassAcc'),
+      alpha: num(f, 'alpha') ?? NaN,
+      beta: num(f, 'beta') ?? NaN,
+      gamma: num(f, 'gamma') ?? NaN,
+      yawOffset: num(f, 'yawOffsetDeg'),
+      trainsInView: num(f, 'trainsInView'),
+      mark: f[ix('mark')] === '1',
+    }))
+    .filter((r) => Number.isFinite(r.t));
+}
+
+/** Loggen upprepar samma fix tills en ny kommer: plocka ut varje ny fix (ändrad position eller noggrannhet). */
+export function fixesOf(rows: ArLogRow[]): { lat: number; lon: number; accuracy: number; t: number }[] {
+  const out: { lat: number; lon: number; accuracy: number; t: number }[] = [];
+  for (const r of rows) {
+    if (r.lat == null || r.lon == null || r.gpsAcc == null) continue;
+    const last = out.at(-1);
+    if (last && last.lat === r.lat && last.lon === r.lon && last.accuracy === r.gpsAcc) continue;
+    out.push({ lat: r.lat, lon: r.lon, accuracy: r.gpsAcc, t: r.t });
+  }
+  return out;
+}
+
+/** AR-loggens orienteringsrader som indata till replay() (samma filter som i appen). */
+export function arRowsForReplay(rows: ArLogRow[]): LogRow[] {
+  return rows
+    .filter((r) => Number.isFinite(r.alpha) && Number.isFinite(r.beta) && Number.isFinite(r.gamma))
+    .map((r) => ({ t: r.t, heading: r.compass, headingAcc: r.compassAcc, alpha: r.alpha, beta: r.beta, gamma: r.gamma }));
+}

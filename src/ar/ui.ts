@@ -113,6 +113,8 @@ export class ArUi {
         <label class="ctl"><span class="ctl-row"><span>Kompassbrus</span><span class="num" id="sim-n-v"></span></span><input class="range" id="sim-n" type="range" min="0" max="30" value="6"></label>
         <div class="ctl"><span class="ctl-row"><span>Kompass</span></span>
           <div class="seg" role="group" aria-label="Kompassens noggrannhet" id="sim-a"><button type="button" data-a="10" aria-pressed="true">±10°</button><button type="button" data-a="20" aria-pressed="false">±20°</button><button type="button" data-a="40" aria-pressed="false">±40°</button><button type="button" data-a="-1" aria-pressed="false">Okalibrerad</button></div></div>
+        <div class="ctl"><span class="ctl-row"><span>GPS</span></span>
+          <div class="seg" role="group" aria-label="GPS-noggrannhet" id="sim-g"><button type="button" data-g="8" aria-pressed="true">±8 m</button><button type="button" data-g="45" aria-pressed="false">±45 m</button><button type="button" data-g="1414" aria-pressed="false">Ingen fix</button></div></div>
         <div class="ctl"><span class="ctl-row"><span>Tid (Rom)</span><span class="num" id="sim-time"></span></span>
           <div class="seg" role="group" aria-label="Tidshastighet" id="sim-ts"><button type="button" data-ts="0" aria-pressed="false">Paus</button><button type="button" data-ts="1" aria-pressed="true">×1</button><button type="button" data-ts="10" aria-pressed="false">×10</button><button type="button" data-ts="60" aria-pressed="false">×60</button></div>
           <div class="seg" role="group" aria-label="Gå till tid" id="sim-tp"><button type="button" data-tp="noon">12:00</button><button type="button" data-tp="evening">18:00</button><button type="button" data-tp="night">00:30</button><button type="button" id="sim-next">Nästa tåg</button></div></div>
@@ -417,6 +419,13 @@ export class ArUi {
       if (!b) return;
       sim.compassAccuracy = Number(b.dataset.a);
       press(acc, b);
+    };
+    const gpsSeg = this.$('#sim-g');
+    gpsSeg.onclick = (e) => {
+      const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-g]');
+      if (!b) return;
+      sim.gpsAccuracy = Number(b.dataset.g); // 1414 m = som perrongen vid Maciachini
+      press(gpsSeg, b);
     };
     const ts = this.$('#sim-ts');
     ts.onclick = (e) => {

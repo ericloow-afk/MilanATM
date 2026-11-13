@@ -14,7 +14,7 @@ const row = (over: Partial<LogRow> = {}): LogRow => ({
 describe('CSV-format', () => {
   it('kolumnordning enligt önskemål, plus manual/mark/source', () => {
     expect(CSV_COLUMNS.join(',')).toBe(
-      'time,lat,lon,gpsAcc,rawCompassHeading,compassAcc,alpha,beta,gamma,filteredYawDeg,yawOffsetDeg,manualDeg,trainsInView,mark,source,buildId',
+      'time,lat,lon,gpsAcc,rawCompassHeading,compassAcc,alpha,beta,gamma,filteredYawDeg,yawOffsetDeg,manualDeg,trainsInView,mark,source,buildId,fLat,fLon,fAcc,mode',
     );
   });
   it('en rad har lika många fält som rubriken och inga extra kommatecken', () => {
@@ -25,7 +25,8 @@ describe('CSV-format', () => {
     expect(f[3]).toBe('9.4');
     expect(f[4]).toBe('91.3'); // 1 decimal
     expect(f[13]).toBe('0');
-    expect(f.at(-1)).toBe('2026-11-06T12:00:00Z');
+    expect(f[15]).toBe('2026-11-06T12:00:00Z');
+    expect(f.at(-1)).toBe('gps');
   });
   it('saknade värden (null/NaN) blir tomma fält, mark blir 1', () => {
     const f = formatRow(row({ lat: null, gpsAcc: null, rawCompass: null, compassAcc: null, alpha: NaN, mark: true })).split(',');

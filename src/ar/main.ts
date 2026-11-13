@@ -10,6 +10,7 @@ import { isoToYmd, romeDate, romeServiceTime } from '../engine/time';
 import { depthFor } from '../depth';
 import { referenceHeading } from '../geo/orientation';
 import { OrientationFilter } from './filter';
+import { GpsFilter, GpsStatus } from './gps-filter';
 import { LogRecorder, type LogRow } from './log';
 import { nearbyTrains, type NearbyTrain } from './nearby';
 import { edgeIndicator } from './overlay';
@@ -43,6 +44,9 @@ let nearby: NearbyTrain[] = [];
 let userPos: { lat: number; lon: number } | null = null;
 let lastReadingNow = new Date();
 let gpsAccuracy: number | null = null;
+/** utjämnad GPS (riktiga sensorer; simulatorns position är exakt och går förbi filtret) */
+const gps = new GpsFilter();
+let gpsStatus = new GpsStatus(Date.now());
 let lastReading: SourceReading | null = null;
 let trainsInView = 0;
 const recorder = new LogRecorder(30_000, 200);
@@ -67,6 +71,10 @@ function makeRow(): LogRow {
     manual: filter.manualDeg,
     trainsInView,
     mark: false,
+    fLat: userPos?.lat ?? null,
+    fLon: userPos?.lon ?? null,
+    fAcc: gps.estimate?.accuracy ?? null,
+    mode: 'gps',
     source: source?.kind ?? 'real',
     buildId: BUILD_ID,
   };
@@ -269,6 +277,9 @@ function simPlaces(): SimPlace[] {
 function setSource(next: SensorSource): void {
   source?.stop();
   source = next;
+  gps.reset();
+  gpsStatus = new GpsStatus(Date.now());
+  userPos = null;
   nearby = [];
   scene.setTrains([], lineColor, () => 0);
   ui.setMode(next.kind);
@@ -326,10 +337,7 @@ function frame(now: number): void {
     lastReadingNow = r.now;
     if (r.orientation) filter.update(dt, r.orientation);
     scene.setOrientation(filter.quaternion);
-    if (r.position) {
-      userPos = r.position;
-      gpsAccuracy = r.position.accuracy;
-    }
+    updatePosition(r);
     if (userPos && now - lastEngine > 100) {
       lastEngine = now;
       nearby = nearbyTrains(currentTrains(r.now), userPos, RADIUS_M);
@@ -371,6 +379,25 @@ function currentTrains(at: Date): FusedTrain[] {
 }
 /** källa (observationens id) för justerade tåg, för info-panelen */
 const basisById = new Map<string, string>();
+
+/**
+ * Position: simulatorns är exakt; riktiga GPS-fixar går genom GpsFilter (fixar sämre än 100 m ignoreras,
+ * hopp jämnas ut). GpsStatus håller reda på "Svag GPS" och "Ingen GPS-fix".
+ */
+function updatePosition(r: SourceReading): void {
+  const wall = Date.now();
+  gpsAccuracy = r.position?.accuracy ?? null;
+  gpsStatus.update(wall, gpsAccuracy);
+  if (!r.position) return;
+  if (source?.kind === 'sim') {
+    // som verkligheten: en fix sämre än 100 m (simulatorns "Ingen fix") ger ingen position
+    userPos = r.position.accuracy <= gps.config.maxAccuracyM ? { lat: r.position.lat, lon: r.position.lon } : null;
+    return;
+  }
+  gps.update({ lat: r.position.lat, lon: r.position.lon, accuracy: r.position.accuracy, t: r.position.t ?? wall });
+  const e = gps.estimate;
+  userPos = e ? { lat: e.lat, lon: e.lon } : null;
+}
 
 function stepSimKeys(sim: SimSource, dt: number): void {
   const k = (n: string) => keys.has(n);
@@ -443,10 +470,12 @@ function updateOverlay(haveOrientation: boolean): void {
   }[filter.compassState];
   const statusText = status === 'ok' ? 'giltig' : status === 'expired' ? 'har gått ut' : 'gäller inte än';
   const hud: HudState = {
-    summary: nearby.length === 0 ? `Inga tåg inom ${RADIUS_M} m` : `${nearby.length} tåg inom ${RADIUS_M} m`,
+    summary:
+      (nearby.length === 0 ? `Inga tåg inom ${RADIUS_M} m` : `${nearby.length} tåg inom ${RADIUS_M} m`) +
+      (gpsStatus.weak && gpsAccuracy != null ? ` · Svag GPS ±${Math.round(gpsAccuracy)} m` : ''),
     details: [
       ['Källa', source.kind === 'real' ? 'sensorer' : 'simulator'],
-      ['GPS', gpsAccuracy == null ? 'väntar på position' : `±${Math.round(gpsAccuracy)} m`],
+      ['GPS', gpsAccuracy == null ? 'väntar på position' : `±${Math.round(gpsAccuracy)} m${gpsAccuracy > 100 ? ' (används inte)' : source.kind === 'real' && gps.estimate ? `, utjämnad ±${Math.round(gps.estimate.accuracy)} m` : ''}`],
       ['Kompass', `${compassText}, fel ${filter.headingError.toFixed(1)}°, manuell ${filter.manualDeg.toFixed(1)}°`],
       ['Tid (Rom)', fmtRome(lastReadingNow)],
       ['Tidtabell', `${statusText}, till ${fmtDate(metro.meta.validTo)}`],

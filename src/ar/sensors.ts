@@ -73,7 +73,7 @@ export class RealSource implements SensorSource {
     }
     this.watchId = navigator.geolocation.watchPosition(
       (p) => {
-        this.position = { lat: p.coords.latitude, lon: p.coords.longitude, accuracy: p.coords.accuracy };
+        this.position = { lat: p.coords.latitude, lon: p.coords.longitude, accuracy: p.coords.accuracy, t: p.timestamp };
       },
       (err) => this.errors.push(`geolocation: kod ${err.code}: ${err.message}`),
       { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 },

@@ -3,6 +3,8 @@
 export const CSV_COLUMNS = [
   'time', 'lat', 'lon', 'gpsAcc', 'rawCompassHeading', 'compassAcc', 'alpha', 'beta', 'gamma',
   'filteredYawDeg', 'yawOffsetDeg', 'manualDeg', 'trainsInView', 'mark', 'source', 'buildId',
+  // tillagda 2026-11-14 (sist, så att äldre loggar läses som förut): utjämnad position och läge (gps/perrong)
+  'fLat', 'fLon', 'fAcc', 'mode',
 ] as const;
 
 export interface LogRow {
@@ -25,6 +27,11 @@ export interface LogRow {
   mark: boolean;
   source: 'real' | 'sim';
   buildId: string;
+  /** utjämnad position (GPS-filtret) eller stationens position i perrongläget */
+  fLat?: number | null;
+  fLon?: number | null;
+  fAcc?: number | null;
+  mode?: 'gps' | 'station';
 }
 
 const num = (v: number | null | undefined, d: number): string =>
@@ -48,6 +55,10 @@ export function formatRow(r: LogRow): string {
     r.mark ? '1' : '0',
     r.source,
     r.buildId.replaceAll(',', ' '),
+    num(r.fLat, 6),
+    num(r.fLon, 6),
+    num(r.fAcc, 1),
+    r.mode ?? 'gps',
   ].join(',');
 }
 
