@@ -17,7 +17,7 @@ export const AR_CONFIG = {
  * vagnens mitt ligger ungefär i brösthöjd till en meter under ögonen, inom 0–1,5 m.
  */
 export const PLATFORM = {
-  relativeDepthM: 0.75,
+  relativeDepthM: 0.3,
   estimate: true as const,
   /** ögonhöjd över perronggolvet (m), där rutnätet läggs */
   eyeHeightM: 1.6,

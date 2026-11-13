@@ -125,7 +125,7 @@ async function sweep(page: Page, label: string): Promise<void> {
   const bad = await page.evaluate(() => {
     const out: string[] = [];
     document.querySelectorAll<HTMLElement>('button, a.btn, input:not([type=hidden]), summary').forEach((el) => {
-      if (el.closest('.tm, .label, [hidden]')) return;
+      if (el.closest('.tm, .label, [hidden], [inert]')) return; // inert = bakom en öppen modal
       const r = el.getBoundingClientRect();
       const cs = getComputedStyle(el);
       if (r.width === 0 || r.height === 0 || cs.visibility === 'hidden' || cs.display === 'none') return;
@@ -420,6 +420,32 @@ describe.skipIf(skip)('AR-vyn (390×844, touch)', () => {
     await expect.poll(() => page.locator('#arrive .arr-log').innerText()).toMatch(/Logg: 0 observationer/);
     await tap(page, '#arrive-close');
     await expect.poll(() => page.locator('#arrive').isVisible()).toBe(false);
+    await ctx.close();
+  });
+
+  it('perrongläget: stationsväljaren (sök, riktning) och "Rikta längs spåret" i simulatorn', async () => {
+    const { ctx, page } = await newPage();
+    await page.goto(`${base}/ar.html`);
+    await expect.poll(() => page.locator('#s-platform').isVisible()).toBe(true);
+    await page.goto(`${base}/ar.html?sim=1`);
+    await page.waitForSelector('#b-platform');
+    await tap(page, '#b-platform');
+    await expect.poll(() => page.locator('#picker').isVisible()).toBe(true);
+    await sweep(page, 'AR, stationsväljaren');
+    await page.locator('#picker-q').fill('macia');
+    await tap(page, '#picker-list [data-stop="MACIACHINI"]');
+    await expect.poll(() => page.locator('#picker-title').innerText()).toContain('riktning');
+    expect(await page.locator('#picker-list').innerText()).toContain('kommer från Zara');
+    await tap(page, '#picker-list [data-dir="M3>COMASINA"]');
+    await expect.poll(() => page.locator('#platform').isVisible()).toBe(true);
+    await expect.poll(() => page.locator('#picker').isVisible()).toBe(false);
+    expect(await page.locator('#pf-name').innerText()).toBe('Maciachini');
+    await expect.poll(() => page.locator('#pf-next').innerText()).toMatch(/Nästa tåg om \d\d:\d\d|Tåget står|Inget tåg/);
+    await sweep(page, 'AR, perrongläget');
+    await tap(page, '#pf-align');
+    await expect.poll(() => page.locator('#pf-align').innerText()).toBe('Rikta om');
+    await tap(page, '#pf-exit');
+    await expect.poll(() => page.locator('#platform').isVisible()).toBe(false);
     await ctx.close();
   });
 

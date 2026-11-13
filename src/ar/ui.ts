@@ -19,6 +19,12 @@ export interface UiHooks {
   onRecord(): void;
   onMark(): void;
   onCopy(): void;
+  /** "Jag står på en perrong" (startvyn): starta sensorerna och öppna stationsväljaren */
+  onStartPlatform(): void;
+  /** "Perrong" i verktygsfältet eller bannern: öppna stationsväljaren */
+  onPlatform(): void;
+  onAlignTrack(): void;
+  onExitPlatform(): void;
 }
 
 export interface LabelItem {
@@ -59,6 +65,7 @@ const h = (html: string): HTMLElement => {
 /** Avstånd (px) mellan en kantindikator och skärmkanten. */
 export const EDGE_INSET = 8;
 
+const ICON_BACK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>';
 const ICON_CLOSE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 
 export class ArUi {
@@ -75,6 +82,7 @@ export class ArUi {
   readonly toolbar = h(`<div id="toolbar">
       <button type="button" class="btn" id="b-cal">Kalibrera</button>
       <button type="button" class="btn" id="b-src">Simulator</button>
+      <button type="button" class="btn" id="b-platform" aria-controls="picker">Perrong</button>
       <button type="button" class="btn" id="b-arrive" aria-expanded="false" aria-controls="arrive">Tåget kom nu</button>
       <button type="button" class="btn" id="b-tools" aria-expanded="false" aria-controls="tools">Verktyg</button>
       <div class="tools panel" id="tools" hidden>
@@ -85,6 +93,21 @@ export class ArUi {
         <textarea id="csv" readonly hidden aria-label="Logg som CSV"></textarea>
       </div>
     </div>`);
+  /** Stationsväljaren (innehållet ritas av main.ts) */
+  readonly picker = h(`<section id="picker" class="picker panel" role="dialog" aria-labelledby="picker-title" hidden>
+      <div class="picker-head"><button type="button" class="btn icon ghost" id="picker-back" aria-label="Tillbaka till stationerna" hidden>${ICON_BACK}</button><strong id="picker-title">Välj station</strong><button type="button" class="btn icon ghost" id="picker-close" aria-label="Stäng">${ICON_CLOSE}</button></div>
+      <input class="picker-q" id="picker-q" type="search" placeholder="Sök station" aria-label="Sök station" autocomplete="off" enterkeyhint="search">
+      <div class="picker-list" id="picker-list"></div>
+    </section>`);
+  /** Perrongkortet: station, riktning, nästa tåg och "Rikta längs spåret" */
+  readonly platform = h(`<section class="platform panel" id="platform" aria-label="Perrong" hidden>
+      <div class="pf-head"><span id="pf-badge"></span><div class="pf-titles"><strong id="pf-name"></strong><span class="muted" id="pf-dir"></span></div></div>
+      <div class="pf-next num" id="pf-next" role="timer" aria-live="off"></div>
+      <div class="pf-src muted" id="pf-src"></div>
+      <p class="pf-hint" id="pf-hint"></p>
+      <button type="button" class="btn primary" id="pf-align">Rikta längs spåret</button>
+      <div class="row2"><button type="button" class="btn secondary" id="pf-change">Byt</button><button type="button" class="btn secondary" id="pf-exit">Avsluta</button></div>
+    </section>`);
   readonly calPanel = h(`<div class="cal panel" id="cal" role="region" aria-label="Kalibrering" hidden>
       <p class="muted">Dra vänster eller höger på bilden för att vrida vyn.</p>
       <div class="muted num" id="cal-read"></div>
@@ -101,6 +124,7 @@ export class ArUi {
         <div class="wordmark">Milano Metro AR</div>
         <p>Tågen under dina fötter, beräknade ur tidtabellen. Positionerna är ungefärliga.</p>
         <button type="button" class="btn primary" id="s-real">Starta AR</button>
+        <button type="button" class="btn secondary" id="s-platform">Jag står på en perrong</button>
         <button type="button" class="btn secondary" id="s-sim">Simulator</button>
         <p class="muted small">Kräver kamera, plats samt rörelse och orientering.</p>
       </div>
@@ -137,7 +161,8 @@ export class ArUi {
     private debug = false,
   ) {
     this.hudBox.insertBefore(this.banner, this.hudBox.querySelector('#hud-details')); // banner staplas under HUD-raden, aldrig ovanpå utfälld text
-    root.append(this.labels, this.aim, this.hudBox, this.info, this.toolbar, this.calPanel, this.arrivePanel, this.simSheet, this.startBox);
+    this.hudBox.insertBefore(this.platform, this.banner);
+    root.append(this.labels, this.aim, this.hudBox, this.picker, this.info, this.toolbar, this.calPanel, this.arrivePanel, this.simSheet, this.startBox);
     this.toolbar.hidden = true;
     this.hudBox.hidden = true;
     this.bind();
@@ -192,6 +217,15 @@ export class ArUi {
   private bind(): void {
     this.$('#s-real').addEventListener('click', () => this.hooks.onStartReal());
     this.$('#s-sim').addEventListener('click', () => this.hooks.onStartSim());
+    this.$('#s-platform').addEventListener('click', () => this.hooks.onStartPlatform());
+    this.$('#b-platform').addEventListener('click', () => this.hooks.onPlatform());
+    this.$('#picker-close').addEventListener('click', () => this.showPicker(false));
+    this.$('#pf-align').addEventListener('click', () => this.hooks.onAlignTrack());
+    this.$('#pf-change').addEventListener('click', () => this.hooks.onPlatform());
+    this.$('#pf-exit').addEventListener('click', () => this.hooks.onExitPlatform());
+    this.banner.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest('[data-banner-act]')) this.hooks.onPlatform();
+    });
     this.$('#b-src').addEventListener('click', () => this.hooks.onSwitchSource());
     this.$('#sim-switch').addEventListener('click', () => this.hooks.onSwitchSource());
     this.$('#b-cal').addEventListener('click', () => {
@@ -300,9 +334,53 @@ export class ArUi {
     (this.aim.querySelector('.aim-arrow') as HTMLElement).style.transform = `rotate(${hint.angleRad.toFixed(3)}rad)`;
   }
 
-  setBanner(text: string | null): void {
+  /**
+   * Banner under HUD-raden. tone muted = dämpad (förslag, inte fel). action = en knapp (bara "Välj station" i dag).
+   */
+  setBanner(text: string | null, opts: { tone?: 'warn' | 'muted'; action?: string } = {}): void {
     this.banner.hidden = !text;
-    if (text && this.banner.textContent !== text) this.banner.textContent = text;
+    if (!text) return;
+    const html = `<span>${esc(text)}</span>${opts.action ? `<button type="button" class="btn secondary" data-banner-act>${esc(opts.action)}</button>` : ''}`;
+    if (this.banner.dataset.h !== html) {
+      this.banner.dataset.h = html;
+      this.banner.innerHTML = html;
+    }
+    this.banner.dataset.tone = opts.tone ?? 'warn';
+  }
+
+  showPicker(open: boolean): void {
+    this.picker.hidden = !open;
+    // modal: resten av gränssnittet går inte att nå (tryck eller skärmläsare) medan väljaren är öppen
+    for (const el of [this.labels, this.aim, this.hudBox, this.info, this.toolbar, this.calPanel, this.arrivePanel, this.simSheet]) el.inert = open;
+    if (open) {
+      this.calPanel.hidden = true;
+      if (!this.arrivePanel.hidden) this.toggleArrive(false);
+      this.selectTrain(null);
+    }
+  }
+  get pickerOpen(): boolean {
+    return !this.picker.hidden;
+  }
+
+  /** Perrongkortet (null = dölj). */
+  setPlatform(s: { badge: string; name: string; dir: string; next: string; src: string; hint: string; aligned: boolean } | null): void {
+    this.platform.hidden = !s;
+    this.root.dataset.platform = s ? '1' : '';
+    if (!s) return;
+    const set = (id: string, v: string, html = false) => {
+      const el = this.$(id);
+      if (html ? el.innerHTML !== v : el.textContent !== v) html ? (el.innerHTML = v) : (el.textContent = v);
+    };
+    set('#pf-badge', s.badge, true);
+    set('#pf-name', s.name);
+    set('#pf-dir', s.dir);
+    set('#pf-next', s.next);
+    set('#pf-src', s.src);
+    set('#pf-hint', s.hint);
+    const b = this.$<HTMLButtonElement>('#pf-align');
+    const label = s.aligned ? 'Rikta om' : 'Rikta längs spåret';
+    if (b.textContent !== label) b.textContent = label;
+    b.className = s.aligned ? 'btn secondary' : 'btn primary';
   }
   setHud(s: HudState): void {
     if (s.summary !== this.hudText) {

@@ -11,12 +11,13 @@ import { depthFor } from '../depth';
 import { referenceHeading } from '../geo/orientation';
 import { OrientationFilter } from './filter';
 import { aimHint, shouldShowAim } from './aim';
-import { AR_CONFIG } from './config';
+import { AR_CONFIG, PLATFORM } from './config';
+import { makeStationMode, nearestStations, nextTrainText, platformDirections, searchStations, SIM_PLATFORMS, type StationMode } from './station';
 import { GpsFilter, GpsStatus } from './gps-filter';
 import { LogRecorder, type LogRow } from './log';
 import { nearbyTrains, type NearbyTrain } from './nearby';
 import { edgeIndicator } from './overlay';
-import { ArScene } from './scene';
+import { ArScene, EYE_HEIGHT_M } from './scene';
 import { RealSource } from './sensors';
 import { SimSource, type SimPlace } from './sim';
 import type { SensorSource, SourceReading } from './source';
@@ -43,6 +44,8 @@ scene.setFov(AR_CONFIG.fovVerticalDeg);
 const filter = new OrientationFilter();
 let metro: MetroData | null = null;
 let rt: RealtimeSession | null = null;
+/** perrongläget (station och riktning), eller null = vanligt GPS-läge */
+let station: StationMode | null = null;
 let source: SensorSource | null = null;
 let nearby: NearbyTrain[] = [];
 let userPos: { lat: number; lon: number } | null = null;
@@ -78,7 +81,7 @@ function makeRow(): LogRow {
     fLat: userPos?.lat ?? null,
     fLon: userPos?.lon ?? null,
     fAcc: gps.estimate?.accuracy ?? null,
-    mode: 'gps',
+    mode: station ? 'station' : 'gps',
     source: source?.kind ?? 'real',
     buildId: BUILD_ID,
   };
@@ -149,6 +152,13 @@ const ui: ArUi = new ArUi(uiRoot, canvas, {
     const ymd = romeServiceTime(sim.time).ymd;
     sim.setTime(romeDate(ymd, kind === 'noon' ? 12 * 3600 : kind === 'evening' ? 18 * 3600 : 30 * 60));
   },
+  onStartPlatform: () => {
+    void startReal(); // sensortillstånden måste begäras direkt i klicket
+    openPicker();
+  },
+  onPlatform: () => openPicker(),
+  onAlignTrack: () => alignTrack(),
+  onExitPlatform: () => exitStation(),
 }, DEBUG);
 ui.setMode(null);
 ui.onTap = (x, y) => {
@@ -348,7 +358,8 @@ function frame(now: number): void {
     if (userPos && now - lastEngine > 100) {
       lastEngine = now;
       nearby = nearbyTrains(currentTrains(r.now), userPos, RADIUS_M);
-      scene.setTrains(nearby, lineColor, (l) => depthFor(l).meters);
+      // perrongläget: tågen på perrongens nivå (tågets mitt PLATFORM.relativeDepthM under ögonhöjd, uppskattning)
+      scene.setTrains(nearby, lineColor, station ? () => PLATFORM.relativeDepthM - EYE_HEIGHT_M : (l) => depthFor(l).meters);
     }
     scene.render();
     updateOverlay(r.orientation != null);
@@ -395,6 +406,11 @@ function updatePosition(r: SourceReading): void {
   const wall = Date.now();
   gpsAccuracy = r.position?.accuracy ?? null;
   gpsStatus.update(wall, gpsAccuracy);
+  if (station) {
+    // perrongläget: stationens koordinat, GPS används inte (under jord ger den ca 1,4 km fel)
+    userPos = { lat: station.lat, lon: station.lon };
+    return;
+  }
   if (!r.position) return;
   if (source?.kind === 'sim') {
     // som verkligheten: en fix sämre än 100 m (simulatorns "Ingen fix") ger ingen position
@@ -475,22 +491,25 @@ function updateOverlay(haveOrientation: boolean): void {
     inaccurate: 'för osäker (ignoreras)',
     'looking-up': 'tittar uppåt (ignoreras)',
     'looking-down': 'tittar brant nedåt (ignoreras)',
+    disabled: 'används inte (perrongläge, bara gyro)',
     moving: 'snabb vridning (ignoreras)',
     jump: 'språng avvisat',
     none: 'saknas',
   }[filter.compassState];
   const statusText = status === 'ok' ? 'giltig' : status === 'expired' ? 'har gått ut' : 'gäller inte än';
   const hud: HudState = {
-    summary:
-      (nearby.length === 0 ? `Inga tåg inom ${RADIUS_M} m` : `${nearby.length} tåg inom ${RADIUS_M} m`) +
-      (gpsStatus.weak && gpsAccuracy != null ? ` · Svag GPS ±${Math.round(gpsAccuracy)} m` : ''),
+    summary: station
+      ? `Perrong ${station.name}${station.aligned ? '' : ' · inte riktad'}`
+      : (nearby.length === 0 ? `Inga tåg inom ${RADIUS_M} m` : `${nearby.length} tåg inom ${RADIUS_M} m`) +
+        (gpsStatus.weak && gpsAccuracy != null ? ` · Svag GPS ±${Math.round(gpsAccuracy)} m` : ''),
     details: [
       ['Källa', source.kind === 'real' ? 'sensorer' : 'simulator'],
       ['GPS', gpsAccuracy == null ? 'väntar på position' : `±${Math.round(gpsAccuracy)} m${gpsAccuracy > 100 ? ' (används inte)' : source.kind === 'real' && gps.estimate ? `, utjämnad ±${Math.round(gps.estimate.accuracy)} m` : ''}`],
       ['Kompass', `${compassText}, fel ${filter.headingError.toFixed(1)}°, manuell ${filter.manualDeg.toFixed(1)}°`],
       ['Tid (Rom)', fmtRome(lastReadingNow)],
       ['Tidtabell', `${statusText}, till ${fmtDate(metro.meta.validTo)}`],
-      ['Djup', `ca ${depthFor('M1').meters} m (uppskattat)`],
+      ['Läge', station ? `perrong ${station.name}, ${lineName(station.line)} mot ${station.terminusName}; mot tåget ${Math.round(station.approachDeg)}°` : 'GPS'],
+      ['Djup', station ? `tågets mitt ca ${PLATFORM.relativeDepthM} m under ögonhöjd (uppskattat)` : `ca ${depthFor('M1').meters} m (uppskattat)`],
       ['Synfält', `${fovDeg}° lodrätt${fovDeg === AR_CONFIG.fovVerticalDeg ? ' (uppmätt ca, stående)' : ' (kalibrerat)'}`],
       ['Bygge', BUILD_ID],
     ],
@@ -500,18 +519,170 @@ function updateOverlay(haveOrientation: boolean): void {
   ui.setErrors(source.errors);
   if (source.kind === 'sim') ui.syncSim(source as SimSource, fmtRome((source as SimSource).time));
 
-  ui.setBanner(
-    status === 'expired'
-      ? `Tidtabellen har gått ut (gällde till ${fmtDate(metro.meta.validTo)}). Inga tåg visas.`
-      : status === 'notYetValid'
-        ? `Tidtabellen gäller först från ${fmtDate(metro.meta.validFrom)}. Inga tåg visas.`
-        : !userPos
-          ? 'Väntar på position (GPS).'
-          : !haveOrientation
-            ? 'Väntar på orientering. Ge tillstånd för rörelse och orientering.'
-            : null,
-  );
+  if (status === 'expired') ui.setBanner(`Tidtabellen har gått ut (gällde till ${fmtDate(metro.meta.validTo)}). Inga tåg visas.`);
+  else if (status === 'notYetValid') ui.setBanner(`Tidtabellen gäller först från ${fmtDate(metro.meta.validFrom)}. Inga tåg visas.`);
+  else if (!station && gpsStatus.noFix(Date.now()))
+    // ingen fix på mer än 5 s: föreslå perrongläget, men byt inte automatiskt
+    ui.setBanner('Ingen GPS-fix. Är du på en perrong?', { tone: 'muted', action: 'Välj station' });
+  else if (!userPos) ui.setBanner('Väntar på position (GPS).');
+  else if (!haveOrientation) ui.setBanner('Väntar på orientering. Ge tillstånd för rörelse och orientering.');
+  else ui.setBanner(null);
+
+  if (station && performance.now() - lastPlatformRender > 500) {
+    lastPlatformRender = performance.now();
+    renderPlatform();
+  }
 }
+
+// ---------- perrongläget ----------
+let lastPlatformRender = 0;
+let alignNote = '';
+let pickerStop: string | null = null;
+const escAttr = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+
+function renderPlatform(): void {
+  if (!station || !rt || !metro) return ui.setPlatform(null);
+  const now = lastReadingNow.getTime();
+  const st = station;
+  const up = rt.upcoming(st.stopId, now, 30 * 60, 1).find((u) => u.direction === st.direction);
+  const next = up?.trains[0] ?? null;
+  ui.setPlatform({
+    badge: lineBadge(st.line, lineName(st.line), 'md'),
+    name: st.name,
+    dir: `mot ${st.terminusName}`,
+    next: nextTrainText(next, now),
+    src: next ? sourceLabel(next.run.source, next.delaySec) : '',
+    hint: st.aligned
+      ? alignNote || 'Riktad längs spåret. Kompassen används inte här, bara gyrot. Rikta om om vyn har glidit.'
+      : alignNote || `Rikta kameran längs perrongen mot det håll tåget kommer ifrån${st.fromName ? ` (från ${st.fromName})` : ''} och tryck.`,
+    aligned: st.aligned,
+  });
+}
+
+function enterStation(mode: StationMode): void {
+  station = mode;
+  alignNote = '';
+  filter.setCompassEnabled(false);
+  if (source?.kind === 'sim') (source as SimSource).teleport({ name: mode.name, lat: mode.lat, lon: mode.lon });
+  userPos = { lat: mode.lat, lon: mode.lon };
+  nearby = [];
+  ui.showPicker(false);
+  lastPlatformRender = 0;
+  renderPlatform();
+}
+
+function exitStation(): void {
+  station = null;
+  filter.setCompassEnabled(true);
+  gps.reset();
+  userPos = null;
+  nearby = [];
+  ui.setPlatform(null);
+}
+
+function alignTrack(): void {
+  if (!station) return;
+  if (filter.alignForward(station.approachDeg)) {
+    station.aligned = true;
+    alignNote = '';
+  } else {
+    alignNote = 'Håll telefonen upprätt och rikta kameran längs perrongen, inte brant nedåt, och försök igen.';
+  }
+  lastPlatformRender = 0;
+  renderPlatform();
+}
+
+function openPicker(): void {
+  pickerStop = null;
+  (ui.picker.querySelector('#picker-q') as HTMLInputElement).value = '';
+  ui.showPicker(true);
+  renderPicker();
+}
+
+function stationRow(s: { stopId: string; name: string; lines: string[] }, extra = ''): string {
+  const badges = s.lines.map((l) => lineBadge(l, lineName(l), 'sm')).join('');
+  return `<button type="button" class="picker-row" data-stop="${escAttr(s.stopId)}"><span class="pr-badges">${badges}</span><span class="pr-text"><span>${escAttr(s.name)}</span></span>${extra}</button>`;
+}
+
+function renderPicker(): void {
+  if (!metro) return;
+  const data = metro;
+  const list = ui.picker.querySelector('#picker-list') as HTMLElement;
+  const q = ui.picker.querySelector('#picker-q') as HTMLInputElement;
+  const back = ui.picker.querySelector('#picker-back') as HTMLElement;
+  const title = ui.picker.querySelector('#picker-title') as HTMLElement;
+  if (pickerStop) {
+    const stop = data.stops.find((s) => s.id === pickerStop)!;
+    title.textContent = `${stop.name}: riktning`;
+    q.hidden = true;
+    back.hidden = false;
+    const dirs = platformDirections(data, pickerStop);
+    list.innerHTML = dirs.length
+      ? '<p class="picker-sec">Vilket tåg väntar du på?</p>' +
+        dirs
+          .map(
+            (d) =>
+              `<button type="button" class="picker-row" data-dir="${escAttr(d.direction)}"><span class="pr-badges">${lineBadge(d.line, lineName(d.line), 'sm')}</span><span class="pr-text"><span>mot ${escAttr(d.terminusName)}</span><span class="pr-sub">${d.fromName ? `kommer från ${escAttr(d.fromName)}` : 'startar här'}</span></span></button>`,
+          )
+          .join('')
+      : '<p class="picker-empty">Inga tåg utgår eller passerar här.</p>';
+    return;
+  }
+  title.textContent = 'Välj station';
+  q.hidden = false;
+  back.hidden = true;
+  const parts: string[] = [];
+  const query = q.value.trim();
+  if (!query) {
+    const here = source?.kind === 'sim' ? { lat: (source as SimSource).lat, lon: (source as SimSource).lon } : gps.estimate;
+    const near = here ? nearestStations(data, here.lat, here.lon) : [];
+    if (near.length) parts.push('<p class="picker-sec">Närmast</p>' + near.map((s) => stationRow(s, `<span class="pr-dist num">${fmtDist(s.distM)}</span>`)).join(''));
+    if (source?.kind === 'sim') {
+      const presets = SIM_PLATFORMS.map((p) => makeStationMode(data, p.stopId, p.direction)).filter((x): x is StationMode => !!x);
+      parts.push(
+        '<p class="picker-sec">Förinställda (simulator)</p>' +
+          presets
+            .map(
+              (p) =>
+                `<button type="button" class="picker-row" data-preset="${escAttr(p.stopId)}|${escAttr(p.direction)}"><span class="pr-badges">${lineBadge(p.line, lineName(p.line), 'sm')}</span><span class="pr-text"><span>${escAttr(p.name)}</span><span class="pr-sub">mot ${escAttr(p.terminusName)}</span></span></button>`,
+            )
+            .join(''),
+      );
+    }
+  }
+  const found = searchStations(data, query);
+  parts.push(
+    `<p class="picker-sec">${query ? `Träffar (${found.length})` : 'Alla stationer'}</p>` +
+      (found.length ? found.map((s) => stationRow(s)).join('') : '<p class="picker-empty">Ingen station matchar.</p>'),
+  );
+  list.innerHTML = parts.join('');
+}
+
+ui.picker.addEventListener('input', (e) => {
+  if ((e.target as HTMLElement).id === 'picker-q') renderPicker();
+});
+ui.picker.addEventListener('click', (e) => {
+  const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button');
+  if (!b || !metro) return;
+  if (b.id === 'picker-back') {
+    pickerStop = null;
+    renderPicker();
+  } else if (b.dataset.stop) {
+    pickerStop = b.dataset.stop;
+    const dirs = platformDirections(metro, pickerStop);
+    if (dirs.length === 1) {
+      const mode = makeStationMode(metro, pickerStop, dirs[0].direction);
+      if (mode) enterStation(mode);
+    } else renderPicker();
+  } else if (b.dataset.dir && pickerStop) {
+    const mode = makeStationMode(metro, pickerStop, b.dataset.dir);
+    if (mode) enterStation(mode);
+  } else if (b.dataset.preset) {
+    const [stopId, dir] = b.dataset.preset.split('|');
+    const mode = makeStationMode(metro, stopId, dir);
+    if (mode) enterStation(mode);
+  }
+});
 
 // ---------- start ----------
 async function main(): Promise<void> {
@@ -537,7 +708,19 @@ async function main(): Promise<void> {
     mock: import.meta.env.DEV && new URLSearchParams(location.search).get('rt') === 'mock',
     isHidden: () => document.hidden,
   });
-  if (new URLSearchParams(location.search).get('sim') === '1') startSim();
+  const params = new URLSearchParams(location.search);
+  if (params.get('sim') === '1') {
+    startSim();
+    // ?sim=1&perrong=1 (Maciachini, M3 mot Comasina) eller &perrong=<stop_id>&riktning=<riktnings-id>
+    const p = params.get('perrong');
+    if (p) {
+      const id = p.toUpperCase();
+      const preset = p === '1' ? SIM_PLATFORMS[0] : { stopId: id, direction: params.get('riktning') ?? platformDirections(metro, id)[0]?.direction ?? '' };
+      const mode = makeStationMode(metro, preset.stopId, preset.direction);
+      if (mode) enterStation(mode);
+      else ui.setErrors([`perrong: okänd station eller riktning (${p})`]);
+    }
+  }
   requestAnimationFrame(frame);
 }
 void main();

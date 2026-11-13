@@ -7,7 +7,7 @@
  *   (se FilterConfig). Parametrarna samlas i ett objekt så att de är lätta att finjustera.
  * - Kompassreferensen räknas på den RÅA kvaternionen (samma ögonblick som kompassvärdet), inte den utjämnade.
  */
-import { deviceQuaternion, qAngleBetween, qMul, qSlerp, referenceHeading, rotateVec, wrap180, yawQuaternion, type Quat } from '../geo/orientation';
+import { deviceQuaternion, forwardHeading, qAngleBetween, qMul, qSlerp, referenceHeading, rotateVec, wrap180, yawQuaternion, type Quat } from '../geo/orientation';
 
 export interface OrientationSample {
   alpha: number;
@@ -22,7 +22,7 @@ export interface OrientationSample {
 }
 
 /** Varför kompassen användes eller ignorerades i senaste samplet. */
-export type CompassState = 'none' | 'uncalibrated' | 'inaccurate' | 'looking-up' | 'looking-down' | 'moving' | 'jump' | 'ok';
+export type CompassState = 'none' | 'disabled' | 'uncalibrated' | 'inaccurate' | 'looking-up' | 'looking-down' | 'moving' | 'jump' | 'ok';
 
 /** Alla justerbara parametrar på ett ställe. Ändra här (eller skicka delar av objektet till OrientationFilter). */
 export interface FilterConfig {
@@ -86,6 +86,7 @@ export class OrientationFilter {
   private manual = 0;
   private haveYaw = false;
   private jumpSec = 0;
+  private compassEnabled = true;
 
   compassState: CompassState = 'none';
   /** senaste fel (grader) mellan kompass och skattning när kompassen användes, annars 0 */
@@ -120,6 +121,32 @@ export class OrientationFilter {
     this.manual = 0;
   }
 
+  /**
+   * Perrongläget: kompassen används inte (bara gyro). När den slås på igen snappar offseten till nästa giltiga
+   * kompassvärde, som vid start.
+   */
+  setCompassEnabled(on: boolean): void {
+    if (on && !this.compassEnabled) this.haveYaw = false;
+    this.compassEnabled = on;
+    if (!on) this.compassState = 'disabled';
+  }
+  get compassOn(): boolean {
+    return this.compassEnabled;
+  }
+
+  /**
+   * "Rikta längs spåret": sätter offseten så att kamerans riktning just nu blir headingDeg (sann nord).
+   * Den manuella kalibreringen nollställs. Returnerar false (och ändrar inget) om kameran tittar för brant
+   * uppåt eller nedåt för att riktningen ska vara väldefinierad.
+   */
+  alignForward(headingDeg: number, maxTiltDeg = 50): boolean {
+    if (!this.qSmooth || Math.abs(this.elevationDeg) > maxTiltDeg) return false;
+    this.yaw = wrap180(headingDeg - forwardHeading(this.qSmooth));
+    this.manual = 0;
+    this.haveYaw = true;
+    return true;
+  }
+
   update(dt: number, s: OrientationSample): void {
     const c = this.config;
     const raw = deviceQuaternion(s.alpha, s.beta, s.gamma, s.screenAngle);
@@ -133,6 +160,7 @@ export class OrientationFilter {
       this.compassState = state;
       if (state !== 'jump') this.jumpSec = 0;
     };
+    if (!this.compassEnabled) return reject('disabled');
     if (s.compass == null || Number.isNaN(s.compass)) return reject('none');
     if (s.compassAccuracy != null && s.compassAccuracy < 0) return reject('uncalibrated');
     if (s.compassAccuracy != null && s.compassAccuracy > c.maxCompassAccuracy) return reject('inaccurate');
