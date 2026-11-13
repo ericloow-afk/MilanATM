@@ -6,9 +6,13 @@ import { LngLatBounds, Map as MapLibreMap, NavigationControl, setWorkerUrl, type
 // MapLibre letar efter sin worker bredvid sin egen fil. Vites produktionsbygge kopierar inte dit den (gav 404 på GitHub Pages,
 // så varken tiles eller våra linjer/stationer kunde ritas, bara DOM-markörerna). Importera den som egen fil och peka ut den.
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
-import { activeTrips, dataStatus, positionAt, type TripRun } from '../engine';
+import { activeTrips, dataStatus, type TripRun } from '../engine';
+import type { FusedRun, FusedTrain } from '../engine/fuse';
 import { romeDate, romeServiceTime } from '../engine/time';
 import type { MetroData, Train } from '../engine/types';
+import { sourceLabel, sourceNote } from '../realtime/label';
+import { RealtimeSession, SOURCE_NAMES } from '../realtime/session';
+import { browserStore } from '../realtime/store';
 import { haversine } from '../geo';
 import { TopBar, type BarAction } from './bar';
 import { MapClock } from './clock';
@@ -43,8 +47,13 @@ let userFix: { lat: number; lon: number; accuracy: number } | null = null;
 let watchId: number | null = null;
 /** aktiva trips; räknas om ungefär en gång per sekund */
 let runs: TripRun[] = [];
+/** samma trips efter realtidslagret (ren tidtabell om inga observationer finns) */
+let fusedRuns: FusedRun[] = [];
+const fusedById = new Map<string, FusedRun>();
+let fusedVersion = -1;
+let rt: RealtimeSession;
 /** tågens position i senaste bildrutan */
-let curTrains = new Map<string, Train>();
+let curTrains = new Map<string, FusedTrain>();
 let meta = curTrains;
 let lastTick = -Infinity;
 let lastMarkerUpdate = -Infinity;
@@ -146,6 +155,7 @@ app.append(bar.el, notice, diag, toastEl, live);
 function clockChanged(): void {
   lastTick = -Infinity;
   nextTraffic = null;
+  rt?.guard.reset(); // spolning: vakten ska inte hålla kvar tåg från en annan tid
 }
 function handleBarAction(a: BarAction): void {
   const wall = Date.now();
@@ -247,7 +257,7 @@ function renderList(): void {
     .map((t) => ({ t, d: haversine(ref.lat, ref.lon, t.lat, t.lon) }))
     .sort((a, b) => a.d - b.d)
     .slice(0, 12);
-  const key = `list:${arr.map((x) => x.t.id).join(',')}`;
+  const key = `list:${rt.hub.version}:${arr.map((x) => (x.t.source === 'schedule' ? x.t.id : `${x.t.id}/${sourceLabel(x.t.source, x.t.delaySec)}`)).join(',')}`;
   if (sheetMode === 'list' && key === sheetKey) {
     // uppdatera bara avstånd och antal
     sheet.body.querySelectorAll<HTMLElement>('[data-d]').forEach((n, i) => (n.textContent = fmtDist(arr[i].d)));
@@ -257,19 +267,35 @@ function renderList(): void {
   sheetMode = 'list';
   sheetKey = key;
   const rows = arr
-    .map(
-      ({ t, d }) =>
-        `<li><button type="button" class="row" data-id="${esc(t.id)}" aria-label="${esc(describe(t))}">${lineBadge(t.line, lineName(t.line), 'md')}<span class="row-text"><span class="row-title">mot ${esc(dirName(t.direction))}</span><span class="row-sub">${t.status === 'dwelling' ? 'står vid ' + esc(stopName(t.fromStation)) : esc(stopName(t.fromStation)) + ' → ' + esc(stopName(t.toStation))}</span></span><span class="row-dist num" data-d>${fmtDist(d)}</span></button></li>`,
-    )
+    .map(({ t, d }) => {
+      const where = t.status === 'dwelling' ? 'står vid ' + esc(stopName(t.fromStation)) : esc(stopName(t.fromStation)) + ' → ' + esc(stopName(t.toStation));
+      const src = t.source === 'schedule' ? '' : `<span class="src src-${t.source}">${esc(sourceLabel(t.source, t.delaySec))}</span> · `;
+      return `<li><button type="button" class="row" data-id="${esc(t.id)}" aria-label="${esc(describe(t))}">${lineBadge(t.line, lineName(t.line), 'md')}<span class="row-text"><span class="row-title">mot ${esc(dirName(t.direction))}</span><span class="row-sub">${src}${where}</span></span><span class="row-dist num" data-d>${fmtDist(d)}</span></button></li>`;
+    })
     .join('');
+  const anyRealtime = arr.some(({ t }) => t.source !== 'schedule');
   sheet.body.innerHTML = `<div class="summary"><strong><span data-n class="num">${curTrains.size}</span> tåg</strong><span class="muted">${userFix ? 'närmast dig' : 'närmast kartans mitt'}</span></div>
     ${arr.length ? `<ul class="list" aria-label="Tåg i närheten">${rows}</ul>` : '<p class="footnote">Inga tåg kör just nu. Använd klockan överst för att välja en annan tid.</p>'}
-    <p class="footnote">Positionerna är beräknade ur tidtabellen, inte realtid. Tidtabell: Comune di Milano / ATM (CC BY 4.0).</p>`;
+    ${lineStatusHtml()}
+    <p class="footnote">${anyRealtime ? 'Tåg utan märkning följer tidtabellen.' : 'Positionerna är beräknade ur tidtabellen, inte realtid.'} Tidtabell: Comune di Milano / ATM (CC BY 4.0).</p>`;
 }
 
-function renderTrain(t: Train): void {
+/** Linjestatus från en statuskälla (om någon är aktiv). Texten visas oförändrad med källans uppdateringstid. */
+function lineStatusHtml(): string {
+  const st = rt.hub.lineStatus();
+  if (!st.size) return '';
+  const updated = Math.max(...[...st.values()].map((o) => o.observedAt));
+  const items = [...st.values()]
+    .sort((a, b) => (a.line < b.line ? -1 : 1))
+    .map((o) => `<li>${lineBadge(o.line, lineName(o.line), 'sm')}<span>${esc(String(o.value))}</span></li>`)
+    .join('');
+  const name = SOURCE_NAMES[[...st.values()][0].source] ?? [...st.values()][0].source;
+  return `<section class="line-status" aria-label="Linjestatus"><h3>Linjestatus</h3><ul>${items}</ul><p class="muted">Källa ${esc(name)}, uppdaterad ${fmtHM(romeServiceTime(new Date(updated)).sec)}</p></section>`;
+}
+
+function renderTrain(t: FusedTrain): void {
   const key = `train:${t.id}`;
-  const sch = trainSchedule(data, t, clock.now(Date.now()));
+  const sch = trainSchedule(data, t, clock.now(Date.now()), undefined, fusedById.get(t.id)?.timing);
   lastSelectedDescription = lineName(t.line);
   if (!sch) return;
   if (sheetMode !== 'train' || sheetKey !== key) {
@@ -278,7 +304,7 @@ function renderTrain(t: Train): void {
     const ends = `<span>${esc(sch.stops[0].name)}</span><span>${esc(sch.terminusName)}</span>`;
     sheet.body.innerHTML = `<div class="head l-${esc(t.line)}">
         ${lineBadge(t.line, lineName(t.line), 'md')}
-        <div class="titles"><h2 id="sel-title" tabindex="-1">mot ${esc(sch.terminusName)}</h2><div class="sub muted" data-f="status"></div></div>
+        <div class="titles"><h2 id="sel-title" tabindex="-1">mot ${esc(sch.terminusName)}</h2><div class="sub muted" data-f="status"></div><div class="sub src" data-f="src"></div></div>
         <button class="btn icon ghost close" type="button" aria-label="Avmarkera tåg" data-close><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
       </div>
       <div class="next"><div><div class="k" data-f="nextlabel">Nästa station</div><div class="v" data-f="next"></div></div><div class="count num" data-f="count" role="timer" aria-live="off"></div></div>
@@ -287,7 +313,7 @@ function renderTrain(t: Train): void {
         <div class="ends muted">${ends}</div>
       </div>
       <dl class="facts"><dt>Station</dt><dd class="num" data-f="stopn"></dd><dt>Avstånd till dig</dt><dd class="num" data-f="dist"></dd></dl>
-      <p class="footnote">Enligt tidtabell, inte realtid.${t.shapeQuality === 'coarse' ? ' Ungefärlig position (grov spårgeometri).' : ''}</p>`;
+      <p class="footnote"><span data-f="note"></span>${t.shapeQuality === 'coarse' ? ' Ungefärlig position (grov spårgeometri).' : ''}</p>`;
   }
   const set = (f: string, text: string) => {
     const n = sheet.body.querySelector(`[data-f="${f}"]`);
@@ -304,6 +330,11 @@ function renderTrain(t: Train): void {
   set('nextlabel', t.status === 'dwelling' ? 'Nästa station efter avgång' : 'Nästa station');
   set('next', sch.atTerminus ? '–' : sch.nextStationName);
   set('count', sch.atTerminus ? '' : fmtCount(Math.round(t.status === 'dwelling' && sch.secondsToDeparture != null ? sch.secondsToDeparture : sch.secondsToNextArrival)));
+  set('src', sourceLabel(t.source, t.delaySec) + (t.held ? ', väntar in justeringen' : ''));
+  const srcEl = sheet.body.querySelector<HTMLElement>('[data-f="src"]');
+  if (srcEl && srcEl.dataset.src !== t.source) srcEl.dataset.src = t.source;
+  const basis = fusedById.get(t.id)?.basis;
+  set('note', sourceNote(t.source, t.delaySec, basis ? (SOURCE_NAMES[basis.source] ?? basis.source) : undefined));
   set('stopn', `${sch.stopIndex + 1} av ${sch.stopCount}`);
   set('dist', userFix ? fmtDist(haversine(userFix.lat, userFix.lon, t.lat, t.lon)) : 'Aktivera Min position');
   (sheet.body.querySelector('.route') as HTMLElement).style.setProperty('--p', sch.routeProgress.toFixed(4));
@@ -464,7 +495,18 @@ function refreshRuns(nowMs: number): void {
   const t0 = performance.now();
   const horizonSec = (TICK_MS / 1000) * Math.max(clock.scale, 1) * 1.5 + 1;
   runs = activeTrips(data, new Date(nowMs), horizonSec);
+  refuse(nowMs);
+  rt.tick(Date.now()); // källorna frågas i verklig tid (nätkällor högst var 30:e s, inte när fliken är dold); nya svar syns nästa bildruta
+  rt.guard.prune(nowMs);
   perf.tickMs = performance.now() - t0;
+}
+
+/** Realtidslagret ovanpå tidtabellen. Utan observationer: samma trips, märkta "tidtabell". */
+function refuse(nowMs: number): void {
+  fusedRuns = rt.fuseRuns(runs, nowMs);
+  fusedVersion = rt.hub.version;
+  fusedById.clear();
+  for (const r of fusedRuns) fusedById.set(r.id, r);
 }
 
 /** Varje bildruta: position för varje aktiv trip från den kontinuerliga klockan (inga sekundsteg). */
@@ -475,13 +517,16 @@ function frame(rafTs: number): void {
   if (tick) {
     lastTick = rafTs;
     refreshRuns(nowMs);
+  } else if (rt.hub.version !== fusedVersion) {
+    refuse(nowMs); // ny observation (t.ex. "Tåget kom nu"): syns direkt, inte först vid nästa sekund
+    sheetKey = '';
   }
   // Med prefers-reduced-motion flyttas markörerna en gång per sekund i stället för att glida
   if (tick || !reducedMotion() || rafTs - lastMarkerUpdate >= TICK_MS) {
     lastMarkerUpdate = rafTs;
-    const list: Train[] = [];
-    for (const r of runs) {
-      const t = positionAt(r, nowMs);
+    const list: FusedTrain[] = [];
+    for (const r of fusedRuns) {
+      const t = rt.position(r, nowMs);
       if (t) list.push(t);
     }
     curTrains = new Map(list.map((t) => [t.id, t]));
@@ -548,6 +593,21 @@ async function start(): Promise<void> {
     showFatal(e instanceof Error ? e.message : String(e));
     return;
   }
+  rt = new RealtimeSession({
+    data,
+    store: browserStore(),
+    env: {
+      officialUrl: import.meta.env.VITE_RT_OFFICIAL_URL,
+      officialKey: import.meta.env.VITE_RT_OFFICIAL_KEY,
+      officialKeyHeader: import.meta.env.VITE_RT_OFFICIAL_KEY_HEADER,
+      statusUrl: import.meta.env.VITE_RT_STATUS_URL,
+      statusKey: import.meta.env.VITE_RT_STATUS_KEY,
+      statusKeyHeader: import.meta.env.VITE_RT_STATUS_KEY_HEADER,
+    },
+    // Mockade källor bara i dev (?rt=mock): påhittade data får aldrig märkas live i det publicerade bygget
+    mock: import.meta.env.DEV && new URLSearchParams(location.search).get('rt') === 'mock',
+    isHidden: () => document.hidden,
+  });
   try {
     map = new MapLibreMap({
       container: 'map',
@@ -563,7 +623,14 @@ async function start(): Promise<void> {
     showFatal(`Webbläsaren kunde inte starta kartan (WebGL?): ${e instanceof Error ? e.message : String(e)}`);
     return;
   }
-  if (import.meta.env.DEV) (window as unknown as { __map: MlMap }).__map = map; // för felsökning i dev
+  if (import.meta.env.DEV) {
+    // för felsökning i dev
+    const w = window as unknown as { __map: MlMap; __rt: RealtimeSession; __trains: () => FusedTrain[]; __select: (id: string) => void };
+    w.__map = map;
+    w.__rt = rt;
+    w.__trains = () => [...curTrains.values()];
+    w.__select = (id) => select(id, { fly: true });
+  }
   map.touchZoomRotate.disableRotation();
   map.keyboard.disableRotation();
   map.addControl(new NavigationControl({ showCompass: false }), 'bottom-right');

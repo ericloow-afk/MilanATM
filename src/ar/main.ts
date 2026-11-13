@@ -1,7 +1,11 @@
 import '../styles/tokens.css';
 import '../styles/components.css';
 import './ar.css';
-import { dataStatus, trains, type MetroData } from '../engine';
+import { activeTrips, dataStatus, trains, type MetroData } from '../engine';
+import type { FusedTrain } from '../engine/fuse';
+import { sourceLabel, sourceNote } from '../realtime/label';
+import { RealtimeSession, SOURCE_NAMES } from '../realtime/session';
+import { browserStore } from '../realtime/store';
 import { isoToYmd, romeDate, romeServiceTime } from '../engine/time';
 import { depthFor } from '../depth';
 import { referenceHeading } from '../geo/orientation';
@@ -30,6 +34,7 @@ const uiRoot = document.getElementById('ui') as HTMLElement;
 const scene = new ArScene(canvas);
 const filter = new OrientationFilter();
 let metro: MetroData | null = null;
+let rt: RealtimeSession | null = null;
 let source: SensorSource | null = null;
 let nearby: NearbyTrain[] = [];
 let userPos: { lat: number; lon: number } | null = null;
@@ -234,7 +239,7 @@ function frame(now: number): void {
     }
     if (userPos && now - lastEngine > 100) {
       lastEngine = now;
-      nearby = nearbyTrains(trains(metro, r.now), userPos, RADIUS_M);
+      nearby = nearbyTrains(currentTrains(r.now), userPos, RADIUS_M);
       scene.setTrains(nearby, lineColor, (l) => depthFor(l).meters);
     }
     scene.render();
@@ -248,6 +253,26 @@ function frame(now: number): void {
   }
   requestAnimationFrame(frame);
 }
+
+/**
+ * Tågen vid `at` efter realtidslagret. Utan observationer: samma positioner som trains(metro, at).
+ * Källorna frågas i verklig tid (nätkällor högst var 30:e s); observationer stämplas med vyns klocka (simulerad i simulatorn).
+ */
+function currentTrains(at: Date): FusedTrain[] {
+  if (!metro || !rt) return [];
+  const t = at.getTime();
+  const out: FusedTrain[] = [];
+  basisById.clear();
+  for (const run of rt.fuseRuns(activeTrips(metro, at, 0), t)) {
+    const tr = rt.position(run, t);
+    if (tr) out.push(tr);
+    if (run.basis) basisById.set(run.id, run.basis.source);
+  }
+  rt.tick(Date.now()); // efter fuse: källorna ser samma trips (mock i dev)
+  return out;
+}
+/** källa (observationens id) för justerade tåg, för info-panelen */
+const basisById = new Map<string, string>();
 
 function stepSimKeys(sim: SimSource, dt: number): void {
   const k = (n: string) => keys.has(n);
@@ -267,12 +292,13 @@ function updateOverlay(haveOrientation: boolean): void {
     if (!v) continue;
     const e = edgeIndicator(v.x, v.y, v.behind, W, H, 44);
     if (!e.onScreen && ++arrows > 6) continue;
+    const ft = n.train as FusedTrain;
     items.push({
       id: n.train.id,
       line: n.train.line,
       lineLabel: lineName(n.train.line),
       title: `mot ${dirName(n.train.direction)}`,
-      dist: fmtDist(n.distance),
+      dist: e.onScreen ? `${fmtDist(n.distance)} · ${sourceLabel(ft.source, ft.delaySec)}` : fmtDist(n.distance),
       onScreen: e.onScreen,
       x: e.x,
       y: e.onScreen ? e.y - 30 : e.y,
@@ -289,8 +315,9 @@ function updateOverlay(haveOrientation: boolean): void {
     if (!n) {
       ui.selectTrain(null);
     } else {
-      const t = n.train;
+      const t = n.train as FusedTrain;
       const d = depthFor(t.line);
+      const basis = basisById.get(t.id);
       ui.showInfo({
         line: t.line,
         lineLabel: lineName(t.line),
@@ -299,7 +326,7 @@ function updateOverlay(haveOrientation: boolean): void {
           t.status === 'dwelling' ? `Står vid ${stopName(t.fromStation)}` : `${stopName(t.fromStation)} → ${stopName(t.toStation)} (${Math.round(t.progress * 100)} %)`,
           `Avstånd ${fmtDist(n.distance)}, ${Math.round(t.speedMps * 3.6)} km/h`,
           `Djup ca ${d.meters} m (uppskattat)`,
-          `Enligt tidtabell, inte realtid${t.shapeQuality === 'coarse' ? '. Ungefärlig position (grov spårgeometri).' : '.'}`,
+          `${sourceNote(t.source, t.delaySec, basis ? (SOURCE_NAMES[basis] ?? basis) : undefined)}${t.shapeQuality === 'coarse' ? ' Ungefärlig position (grov spårgeometri).' : ''}`,
         ],
       });
     }
@@ -357,6 +384,20 @@ async function main(): Promise<void> {
     ui.setErrors([`metro.json: ${e instanceof Error ? e.message : String(e)}`]);
     return;
   }
+  rt = new RealtimeSession({
+    data: metro,
+    store: browserStore(),
+    env: {
+      officialUrl: import.meta.env.VITE_RT_OFFICIAL_URL,
+      officialKey: import.meta.env.VITE_RT_OFFICIAL_KEY,
+      officialKeyHeader: import.meta.env.VITE_RT_OFFICIAL_KEY_HEADER,
+      statusUrl: import.meta.env.VITE_RT_STATUS_URL,
+      statusKey: import.meta.env.VITE_RT_STATUS_KEY,
+      statusKeyHeader: import.meta.env.VITE_RT_STATUS_KEY_HEADER,
+    },
+    mock: import.meta.env.DEV && new URLSearchParams(location.search).get('rt') === 'mock',
+    isHidden: () => document.hidden,
+  });
   if (new URLSearchParams(location.search).get('sim') === '1') startSim();
   requestAnimationFrame(frame);
 }

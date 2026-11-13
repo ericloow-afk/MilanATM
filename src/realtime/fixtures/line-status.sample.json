@@ -1,0 +1,11 @@
+{
+  "_comment": "Påhittad testdata i StatusSource-formatet. Inte ett svar från E015 eller ATM.",
+  "updatedAt": "2026-11-13T22:15:00Z",
+  "lines": [
+    { "line": "M1", "status": "regolare" },
+    { "line": "M2", "status": "regolare" },
+    { "line": "M3", "status": "rallentamenti", "message": "testtext, inte en riktig störning" },
+    { "line": "M4", "status": "regolare" },
+    { "line": "M5", "status": "regolare" }
+  ]
+}

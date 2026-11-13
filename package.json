@@ -11,7 +11,8 @@
     "build:data": "node tools/build-metro.mjs data/raw/gtfs.zip",
     "next": "node tools/next-departures.mjs",
     "replay": "vite-node tools/filter-replay-report.ts",
-    "test:ui": "vitest run --config vitest.e2e.config.ts"
+    "test:ui": "vitest run --config vitest.e2e.config.ts",
+    "dev:http": "vite --mode http --host 127.0.0.1 --port 5180"
   },
   "dependencies": {
     "maplibre-gl": "^6.16.0",

@@ -2,10 +2,10 @@ import { defineConfig } from 'vite';
 import basicSsl from '@vitejs/plugin-basic-ssl';
 import { resolve } from 'node:path';
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   // Själv-signerat HTTPS + lyssna på nätverket, så iPhone kan nå dev-servern (kamera/sensorer kräver HTTPS).
-  // NO_SSL=1: ren http (till exempel localhost-test på desktop; localhost räknas som säker kontext).
-  plugins: process.env.NO_SSL ? [] : [basicSsl()],
+  // NO_SSL=1 eller --mode http (npm run dev:http): ren http (till exempel localhost-test på desktop; localhost räknas som säker kontext).
+  plugins: process.env.NO_SSL || mode === 'http' ? [] : [basicSsl()],
   server: { host: true, port: 5173 },
   // Byggtid, visas i AR-vyns HUD och loggen så att man ser att man har senaste versionen (iOS Safari cachar hårt).
   // I dev sätts den när servern (eller konfigurationen) startar.
@@ -27,4 +27,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));

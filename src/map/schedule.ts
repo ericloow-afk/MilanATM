@@ -1,5 +1,5 @@
 /** Tidtabellsinfo för ett valt tåg och tidtabellens giltighet. Ren TS, bygger på metro.json och motorns Train. */
-import { DEFAULT_OPTIONS, patternTimings, type EngineOptions } from '../engine';
+import { DEFAULT_OPTIONS, patternTimings, type EngineOptions, type Timing } from '../engine';
 import { romeServiceTime } from '../engine/time';
 import type { MetroData, Train } from '../engine/types';
 
@@ -34,8 +34,11 @@ export function parseTrainId(id: string): { pattern: number; service: number; da
   return m ? { pattern: Number(m[1]), service: Number(m[2]), day: Number(m[3]), start: Number(m[4]) } : null;
 }
 
-/** Tider följer motorns effektiva tider (med uppehållsmodellen om den används), så nedräkningen stämmer med markören. */
-export function trainSchedule(data: MetroData, train: Train, at: Date, opts: EngineOptions = DEFAULT_OPTIONS): TrainSchedule | null {
+/**
+ * Tider följer motorns effektiva tider (med uppehållsmodellen om den används), så nedräkningen stämmer med markören.
+ * `timing` = tripens justerade tider från realtidslagret (src/engine/fuse.ts); annars tidtabellens.
+ */
+export function trainSchedule(data: MetroData, train: Train, at: Date, opts: EngineOptions = DEFAULT_OPTIONS, timing?: Timing): TrainSchedule | null {
   const id = parseTrainId(train.id);
   if (!id) return null;
   const pat = data.patterns[id.pattern];
@@ -46,7 +49,7 @@ export function trainSchedule(data: MetroData, train: Train, at: Date, opts: Eng
   const { ymd, sec } = romeServiceTime(at);
   const rel = sec + daysBetween(id.day, ymd) * 86400 - id.start;
   const nextIdx = Math.min(last, i + 1);
-  const tm = patternTimings(data, opts)[id.pattern];
+  const tm = timing ?? patternTimings(data, opts)[id.pattern];
   const nameAt = (k: number) => data.stops[pat.stops[k]].name;
   const total = pat.sd[last] - pat.sd[0];
   const dNow =
