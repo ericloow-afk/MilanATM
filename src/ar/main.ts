@@ -19,7 +19,10 @@ import { SimSource, type SimPlace } from './sim';
 import type { SensorSource, SourceReading } from './source';
 import { ArUi, type HudState, type LabelItem } from './ui';
 import { fmtDate, fmtDist, fmtHMS } from '../map/format';
-import { lineLabel } from '../ui/line-badge';
+import { lineBadge, lineLabel } from '../ui/line-badge';
+import { arrivalsHtml, arrivalsKey, confirmText, updateArrivalTexts, type ArrivalRow } from '../ui/arrivals';
+import { csvFilename, exportCsv } from '../ui/download';
+import { haversine } from '../geo';
 
 const BUILD_ID = typeof __BUILD_ID__ === 'string' ? __BUILD_ID__ : 'dev';
 const DEBUG = new URLSearchParams(location.search).get('debug') === '1';
@@ -145,6 +148,95 @@ ui.onTap = (x, y) => {
   ui.selectTrain(best?.id ?? null);
   if (!best) ui.showInfo(null);
 };
+// ---------- "Tåget kom nu" vid närmaste station ----------
+const ARRIVE_RADIUS_M = 500;
+let arriveConfirm: { text: string; undo: boolean } | null = null;
+let arriveKey = '';
+let arriveStation: string | null = null;
+
+function nearestStop(): { id: string; name: string; d: number } | null {
+  if (!metro || !userPos) return null;
+  let best: { id: string; name: string; d: number } | null = null;
+  for (const s of metro.stops) {
+    const d = haversine(userPos.lat, userPos.lon, s.lat, s.lon);
+    if (d <= ARRIVE_RADIUS_M && (!best || d < best.d)) best = { id: s.id, name: s.name, d };
+  }
+  return best;
+}
+
+/** Ritar panelen (anropas ungefär en gång per sekund när den är öppen). Bara texterna uppdateras om strukturen är densamma. */
+function renderArrive(): void {
+  if (!metro || !rt || !ui.arriveOpen) return;
+  const near = nearestStop();
+  const body = ui.arriveBody;
+  if (!near) {
+    ui.setArriveHead('Ingen station i närheten', userPos ? `Ingen metrostation inom ${ARRIVE_RADIUS_M} m.` : 'Väntar på position (GPS).', '');
+    arriveStation = null;
+    arriveKey = 'none';
+    if (body.dataset.k !== 'none') {
+      body.dataset.k = 'none';
+      body.innerHTML = `<p class="arr-hint muted">Gå närmare en station (eller välj en plats i simulatorn).</p><div class="arr-log"><span class="muted">Logg: <span class="num">${rt.log.size}</span> observationer</span><button type="button" class="btn secondary" data-export${rt.log.size ? '' : ' disabled'}>Exportera CSV</button></div>`;
+    }
+    return;
+  }
+  if (near.id !== arriveStation) arriveConfirm = null;
+  arriveStation = near.id;
+  const lines = [...new Set(metro.patterns.filter((p) => p.stops.some((s) => metro!.stops[s].id === near.id)).map((p) => p.line))].sort();
+  ui.setArriveHead(near.name, `${fmtDist(near.d)} härifrån`, lines.map((l) => lineBadge(l, lineName(l), 'sm')).join(''));
+  const now = lastReadingNow.getTime();
+  const rows: ArrivalRow[] = rt.upcoming(near.id, now).map((u) => {
+    const line = metro!.directions.find((d) => d.id === u.direction)?.line ?? '';
+    return {
+      direction: u.direction,
+      directionName: dirName(u.direction),
+      line,
+      lineLabel: lineName(line),
+      trains: u.trains.map((t) => ({ etaMs: t.etaMs, atStation: t.atStation, source: t.run.source, delaySec: t.delaySec })),
+    };
+  });
+  const state = { rows, now, canAdjust: true, confirm: arriveConfirm, logCount: rt.log.size };
+  const key = `${near.id}:${arrivalsKey(state)}`;
+  if (key === arriveKey && body.dataset.k === key) {
+    updateArrivalTexts(body, state);
+    return;
+  }
+  arriveKey = key;
+  body.dataset.k = key;
+  body.innerHTML = arrivalsHtml(state);
+}
+
+ui.arrivePanel.addEventListener('click', (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('button');
+  if (!btn || !metro || !rt) return;
+  if (btn.dataset.arrive && arriveStation) {
+    const dir = metro.directions.find((d) => d.id === btn.dataset.arrive);
+    if (!dir) return;
+    // Simulatorn stämplar med simulerad tid, sensorläget med verklig tid
+    const res = rt.trainArrived({ line: dir.line, direction: dir.id, stopId: arriveStation, now: lastReadingNow.getTime() });
+    arriveConfirm = res.ok
+      ? { text: confirmText(lineName(dir.line), dir.name, res.match.delaySec) + (res.savedToDevice ? '' : ' (kunde inte sparas på enheten)'), undo: true }
+      : { text: `Hittade inget tåg mot ${dir.name} inom 10 minuter i tidtabellen.`, undo: false };
+  } else if (btn.hasAttribute('data-undo')) {
+    rt.undoLast(lastReadingNow.getTime());
+    arriveConfirm = { text: 'Justeringen är ångrad.', undo: false };
+  } else if (btn.hasAttribute('data-export')) {
+    void exportCsv(rt.log.toCsv(), csvFilename()).then((how) => {
+      arriveConfirm = { text: how === 'file' ? `Loggen sparad som fil (${rt!.log.size} rader).` : how === 'clipboard' ? 'Loggen kopierad till urklipp.' : 'Det gick inte att exportera loggen.', undo: false };
+      arriveKey = '';
+      renderArrive();
+    });
+    return;
+  } else return;
+  arriveKey = '';
+  renderArrive();
+});
+ui.onArriveToggle = (open) => {
+  if (open) {
+    arriveKey = '';
+    renderArrive();
+  }
+};
+
 ui.onLook = (dx, dy) => {
   if (source?.kind === 'sim') (source as SimSource).look(-dx * 0.25, dy * 0.25);
 };
@@ -222,6 +314,7 @@ function jumpToNextTrain(): void {
 // ---------- huvudloop ----------
 let last = performance.now();
 let lastEngine = 0;
+let lastArriveRender = 0;
 
 function frame(now: number): void {
   const dt = Math.min(0.1, (now - last) / 1000);
@@ -244,6 +337,10 @@ function frame(now: number): void {
     }
     scene.render();
     updateOverlay(r.orientation != null);
+    if (ui.arriveOpen && now - lastArriveRender > 1000) {
+      lastArriveRender = now;
+      renderArrive();
+    }
     if (recorder.active) {
       const done = recorder.tick(Date.now(), makeRow);
       ui.setRecordUi({ recording: !done, label: recLabel(), canCopy: recorder.rowCount > 0, ...(done ? { note: `Klar: ${recorder.rowCount} rader, ${recorder.markCount} markeringar` } : {}) });
@@ -268,7 +365,8 @@ function currentTrains(at: Date): FusedTrain[] {
     if (tr) out.push(tr);
     if (run.basis) basisById.set(run.id, run.basis.source);
   }
-  rt.tick(Date.now()); // efter fuse: källorna ser samma trips (mock i dev)
+  if (userPos) rt.setMockFocus(userPos.lat, userPos.lon); // bara mock-källan i dev
+  rt.tick(t); // efter fuse: källorna ser samma trips (mock i dev); vyns klocka avgör vilka handjusteringar som gäller
   return out;
 }
 /** källa (observationens id) för justerade tåg, för info-panelen */

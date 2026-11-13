@@ -73,6 +73,7 @@ export class ArUi {
   readonly toolbar = h(`<div id="toolbar">
       <button type="button" class="btn" id="b-cal">Kalibrera</button>
       <button type="button" class="btn" id="b-src">Simulator</button>
+      <button type="button" class="btn" id="b-arrive" aria-expanded="false" aria-controls="arrive">Tåget kom nu</button>
       <button type="button" class="btn" id="b-tools" aria-expanded="false" aria-controls="tools">Verktyg</button>
       <div class="tools panel" id="tools" hidden>
         <button type="button" class="btn" id="b-rec">Spela in 30 s</button>
@@ -88,6 +89,11 @@ export class ArUi {
       <label class="ctl"><span class="ctl-row"><span>Synfält (lodrätt)</span><span class="num" id="fov-v">60°</span></span><input class="range" id="fov" type="range" min="35" max="90" value="60"></label>
       <div class="row2"><button type="button" class="btn secondary" id="cal-reset">Återställ</button><button type="button" class="btn" id="cal-close">Klar</button></div>
     </div>`);
+  /** "Tåget kom nu" för närmaste station (innehållet ritas av main.ts med src/ui/arrivals.ts) */
+  readonly arrivePanel = h(`<section class="arrive panel" id="arrive" aria-labelledby="arrive-title" hidden>
+      <div class="arrive-head"><span id="arrive-badges"></span><div class="arrive-titles"><strong id="arrive-title">Närmaste station</strong><span class="muted" id="arrive-sub"></span></div><button type="button" class="btn icon ghost" id="arrive-close" aria-label="Stäng">${ICON_CLOSE}</button></div>
+      <div id="arrive-body"></div>
+    </section>`);
   readonly startBox = h(`<div id="start">
       <div class="start-inner">
         <div class="wordmark">Milano Metro AR</div>
@@ -127,7 +133,7 @@ export class ArUi {
     private debug = false,
   ) {
     this.hudBox.insertBefore(this.banner, this.hudBox.querySelector('#hud-details')); // banner staplas under HUD-raden, aldrig ovanpå utfälld text
-    root.append(this.labels, this.hudBox, this.info, this.toolbar, this.calPanel, this.simSheet, this.startBox);
+    root.append(this.labels, this.hudBox, this.info, this.toolbar, this.calPanel, this.arrivePanel, this.simSheet, this.startBox);
     this.toolbar.hidden = true;
     this.hudBox.hidden = true;
     this.bind();
@@ -188,6 +194,8 @@ export class ArUi {
       this.calPanel.hidden = !this.calPanel.hidden;
     });
     this.$('#cal-close').addEventListener('click', () => (this.calPanel.hidden = true));
+    this.$('#b-arrive').addEventListener('click', () => this.toggleArrive());
+    this.$('#arrive-close').addEventListener('click', () => this.toggleArrive(false));
     this.$('#cal-reset').addEventListener('click', () => this.hooks.onResetCalibration());
     this.$('#hud-btn').addEventListener('click', () => this.toggleHud());
     this.$('#b-tools').addEventListener('click', () => this.toggleTools());
@@ -225,6 +233,34 @@ export class ArUi {
     window.addEventListener('resize', () => this.syncBottom());
   }
 
+  /** Öppna/stäng panelen "Tåget kom nu". */
+  toggleArrive(open?: boolean): void {
+    const next = open ?? this.arrivePanel.hidden;
+    this.arrivePanel.hidden = !next;
+    this.$('#b-arrive').setAttribute('aria-expanded', String(next));
+    if (next) {
+      this.calPanel.hidden = true;
+      this.selectTrain(null);
+    }
+    this.onArriveToggle?.(next);
+  }
+  get arriveOpen(): boolean {
+    return !this.arrivePanel.hidden;
+  }
+  /** Rubrik och brickor för panelen (stationens namn och avstånd). */
+  setArriveHead(title: string, sub: string, badgesHtml: string): void {
+    const t = this.$('#arrive-title');
+    if (t.textContent !== title) t.textContent = title;
+    const s = this.$('#arrive-sub');
+    if (s.textContent !== sub) s.textContent = sub;
+    const b = this.$('#arrive-badges');
+    if (b.innerHTML !== badgesHtml) b.innerHTML = badgesHtml;
+  }
+  get arriveBody(): HTMLElement {
+    return this.$('#arrive-body');
+  }
+
+  onArriveToggle?: (open: boolean) => void;
   onTap?: (x: number, y: number) => void;
   onLook?: (dx: number, dy: number) => void;
 
@@ -232,6 +268,7 @@ export class ArUi {
     return this.selected;
   }
   selectTrain(id: string | null): void {
+    if (id && !this.arrivePanel.hidden) this.toggleArrive(false); // aldrig två paneler över varandra
     this.selected = id;
     if (!id) this.info.hidden = true;
     this.hooks.onSelectTrain(id);

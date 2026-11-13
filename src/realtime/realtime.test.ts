@@ -19,19 +19,38 @@ const data = makeData({ east: [0, 780, 1560], bent: [0, 1900], alt: [0, 800, 160
 describe('ManualSource', () => {
   const o = (at: number) => trainArrivedNow({ line: 'M9', direction: 'M9>C', stopId: 'B', now: at });
 
+  const KEY = 'mmar.realtime.manual.v1';
+  /** ManualSource med en styrbar väggklocka */
+  const withWall = (store: KeyValueStore | null, wall: { t: number }) => new ManualSource(store, KEY, MANUAL_TTL_MS, () => wall.t);
+
   it('sparar i lagringen och läser tillbaka efter omstart', async () => {
     const store = new MemoryStore();
-    new ManualSource(store).add(o(T), T);
-    const again = new ManualSource(store);
-    expect(await again.observe(T + 1000)).toHaveLength(1);
+    const wall = { t: T };
+    withWall(store, wall).add(o(T), T);
+    wall.t = T + 1000;
+    expect(await withWall(store, wall).observe(T + 1000)).toHaveLength(1);
   });
   it('går ut efter 20 minuter och tas bort ur lagringen', () => {
     const store = new MemoryStore();
-    const m = new ManualSource(store);
+    const wall = { t: T };
+    const m = withWall(store, wall);
     m.add(o(T), T);
-    expect(m.list(T + MANUAL_TTL_MS)).toHaveLength(1);
-    expect(m.list(T + MANUAL_TTL_MS + 1)).toHaveLength(0);
-    expect(JSON.parse(store.getItem('mmar.realtime.manual.v1')!)).toEqual([]);
+    wall.t = T + MANUAL_TTL_MS;
+    expect(m.list(wall.t)).toHaveLength(1);
+    wall.t = T + MANUAL_TTL_MS + 1;
+    expect(m.list(wall.t)).toHaveLength(0);
+    expect(JSON.parse(store.getItem(KEY)!)).toEqual([]);
+  });
+  it('simulatorns tid: gäller nära simulerad tid, sparas inte och raderar inte riktiga observationer', () => {
+    const store = new MemoryStore();
+    const wall = { t: T };
+    const m = withWall(store, wall);
+    m.add(o(T), T); // riktig observation
+    const sim = T - 6 * 3600_000; // simulatorn står sex timmar tidigare
+    m.add(o(sim), sim);
+    expect(m.list(sim + 60_000).map((x) => x.observedAt)).toEqual([sim]);
+    expect(m.list(T).map((x) => x.observedAt)).toEqual([T]);
+    expect(JSON.parse(store.getItem(KEY)!).map((x: RealtimeObservation) => x.observedAt)).toEqual([T]);
   });
   it('fungerar utan lagring och när lagringen kastar (privat läge)', () => {
     const throwing: KeyValueStore = {
@@ -44,7 +63,7 @@ describe('ManualSource', () => {
       removeItem: () => {},
     };
     for (const s of [null, throwing]) {
-      const m = new ManualSource(s);
+      const m = withWall(s, { t: T });
       m.add(o(T), T);
       expect(m.list(T)).toHaveLength(1);
     }
@@ -55,7 +74,7 @@ describe('ManualSource', () => {
     expect(eventTimeMs(x)).toBe(T);
   });
   it('ångra tar bort den senaste', () => {
-    const m = new ManualSource(new MemoryStore());
+    const m = withWall(new MemoryStore(), { t: T });
     m.add(o(T), T);
     m.add(o(T + 1000), T + 1000);
     expect(m.undoLast(T + 2000)?.observedAt).toBe(T + 1000);

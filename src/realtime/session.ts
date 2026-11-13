@@ -2,7 +2,8 @@
  * Realtidslagret som kartan och AR-vyn använder: källor, hub, fuse, positionsvakt, "Tåget kom nu" och loggen.
  * Utan observationer blir resultatet exakt tidtabellen (samma positioner som positionAt).
  */
-import { activeTrips, DEFAULT_OPTIONS, type EngineOptions, type TripRun } from '../engine';
+import { activeTrips, DEFAULT_OPTIONS, positionAt, type EngineOptions, type TripRun } from '../engine';
+import { haversine } from '../geo';
 import { asScheduled, fuse, matchObservation, PositionGuard, type FusedRun, type FusedTrain, type Match } from '../engine/fuse';
 import type { MetroData } from '../engine/types';
 import { RealtimeHub } from './hub';
@@ -31,6 +32,8 @@ export interface SessionConfig {
   mock?: boolean;
   isHidden?: () => boolean;
   engine?: EngineOptions;
+  /** verklig tid (tester kan ersätta den) */
+  wallNow?: () => number;
 }
 
 export type ArriveResult =
@@ -59,10 +62,12 @@ export class RealtimeSession {
   readonly guard = new PositionGuard();
   private readonly engine: EngineOptions;
   private lastRuns: TripRun[] = [];
+  private readonly wallNow: () => number;
 
   constructor(private cfg: SessionConfig) {
     this.engine = cfg.engine ?? DEFAULT_OPTIONS;
-    this.manual = new ManualSource(cfg.store);
+    this.wallNow = cfg.wallNow ?? (() => Date.now());
+    this.manual = new ManualSource(cfg.store, undefined, undefined, this.wallNow);
     this.log = new ObservationLog(cfg.store);
     const env = cfg.env ?? {};
     const sources: RealtimeSource[] = [
@@ -79,9 +84,13 @@ export class RealtimeSession {
     return this.hub.sources.some((s) => s.kind === 'live' && s.enabled);
   }
 
-  /** Låt hubben fråga källorna (ca 1 gång/s). `now` = den klocka observationerna stämplas med. */
-  tick(now: number): void {
-    this.hub.tick(now);
+  /**
+   * Låt hubben fråga källorna (ca 1 gång/s). Intervallen räknas i verklig tid; `view` = vyns klocka
+   * (simulerad tid i AR-simulatorn), som avgör vilka handjusteringar som gäller.
+   */
+  tick(view?: number): void {
+    const wall = this.wallNow();
+    this.hub.tick(wall, view ?? wall);
   }
 
   /** Justerade trips. Utan observationer: ren tidtabell. */
@@ -127,7 +136,7 @@ export class RealtimeSession {
     };
     this.manual.add(observation, p.now);
     const savedToDevice = this.log.add(entry);
-    void this.hub.pollById('manual', p.now);
+    void this.hub.pollById('manual', this.wallNow(), p.now);
     return { ok: true, match, observation, entry, savedToDevice };
   }
 
@@ -138,7 +147,7 @@ export class RealtimeSession {
     const m = matchObservation(this.cfg.data, last, { engine: this.engine });
     if (m && last.stopId) this.log.removeLast(m.tripId, last.stopId);
     this.guard.reset();
-    void this.hub.pollById('manual', now);
+    void this.hub.pollById('manual', this.wallNow(), now);
     return true;
   }
 
@@ -171,13 +180,33 @@ export class RealtimeSession {
     return [...byDir.entries()].map(([direction, list]) => ({ direction, trains: list.sort((a, b) => a.etaMs - b.etaMs).slice(0, perDirection) }));
   }
 
-  /** Mock (dev): ett M1-tåg får en "live"-observation, 90 s sent vid nästa station. */
+  /** Punkt som mock-källan (bara dev) väljer tåg nära. */
+  setMockFocus(lat: number, lon: number): void {
+    this.mockFocus = { lat, lon };
+  }
+  private mockFocus: { lat: number; lon: number } | null = null;
+
+  /** Mock (dev): ett tåg nära vyn får en "live"-observation, 90 s sent vid nästa station. */
   private mockLive(): RealtimeSource {
     return new ScriptedSource(
       'mock',
       'live',
       (now) => {
-        const run = this.lastRuns.filter((r) => r.line === 'M1').sort((a, b) => (a.id < b.id ? -1 : 1))[0];
+        // Tåget närmast vyn (kartans mitt eller AR-positionen) som är på väg, annars första M1-tåget
+        let run: TripRun | undefined;
+        if (this.mockFocus) {
+          let best = Infinity;
+          for (const r of this.lastRuns) {
+            const p = positionAt(r, now);
+            if (!p || p.status !== 'moving') continue;
+            const d = haversine(this.mockFocus.lat, this.mockFocus.lon, p.lat, p.lon);
+            if (d < best) {
+              best = d;
+              run = r;
+            }
+          }
+        }
+        run ??= this.lastRuns.filter((r) => r.line === 'M1').sort((a, b) => (a.id < b.id ? -1 : 1))[0];
         if (!run) return [];
         const rel = (now - run.baseMs) / 1000;
         const k = run.timing.arr.findIndex((a, i) => a > rel && i > 0);

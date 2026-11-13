@@ -1,6 +1,11 @@
 /**
  * ManualSource: justering för hand ("Tåget kom nu"). Fungerar utan någon extern källa.
- * Observationerna sparas i localStorage och gäller i 20 minuter.
+ *
+ * Två klockor:
+ * - Väggklockan bestämmer vad som sparas i localStorage: observationer äldre än 20 min (verklig tid) tas bort.
+ * - Vyns klocka (verklig tid på kartan, simulerad tid i AR-simulatorn) bestämmer vad som levereras: bara
+ *   observationer inom 20 min från vyns "nu". En observation gjord i simulatorn kl. 12:00 sparas därför inte
+ *   permanent, men gäller medan simulatorn står nära 12:00, och raderar aldrig riktiga observationer.
  */
 import { readJson, writeJson, type KeyValueStore } from './store';
 import type { RealtimeObservation, RealtimeSource } from './types';
@@ -26,36 +31,32 @@ export class ManualSource implements RealtimeSource {
     private store: KeyValueStore | null,
     private key = MANUAL_KEY,
     private ttlMs = MANUAL_TTL_MS,
+    private wallNow: () => number = () => Date.now(),
   ) {
     const saved = readJson<unknown[]>(store, key, []);
-    this.items = Array.isArray(saved) ? saved.filter(isObservation) : [];
+    this.items = (Array.isArray(saved) ? saved.filter(isObservation) : []).filter((o) => this.freshByWall(o));
   }
 
   add(o: RealtimeObservation, now: number): void {
-    this.items = [...this.prune(now), o];
-    writeJson(this.store, this.key, this.items);
+    this.housekeep(now);
+    this.items.push(o);
+    this.persist();
   }
 
-  /** Observationer som inte gått ut. Utgångna tas bort ur lagringen. */
+  /** Observationer inom 20 min från `now` (vyns klocka). */
   list(now: number): RealtimeObservation[] {
-    const kept = this.prune(now);
-    if (kept.length !== this.items.length) {
-      this.items = kept;
-      writeJson(this.store, this.key, kept);
-    }
-    return this.items.slice();
+    this.housekeep(now);
+    return this.items.filter((o) => now - o.observedAt <= this.ttlMs && o.observedAt - now <= this.ttlMs);
   }
 
   observe(now: number): Promise<RealtimeObservation[]> {
     return Promise.resolve(this.list(now));
   }
 
-  /** Tar bort den senaste observationen (ångra). */
-  undoLast(now: number): RealtimeObservation | null {
-    const kept = this.prune(now);
-    const last = kept.pop() ?? null;
-    this.items = kept;
-    writeJson(this.store, this.key, kept);
+  /** Tar bort den senast tillagda observationen (ångra). */
+  undoLast(_now?: number): RealtimeObservation | null {
+    const last = this.items.pop() ?? null;
+    this.persist();
     return last;
   }
 
@@ -64,9 +65,23 @@ export class ManualSource implements RealtimeSource {
     writeJson(this.store, this.key, []);
   }
 
-  private prune(now: number): RealtimeObservation[] {
-    // Utgång räknas på väggklockan: observationer äldre än 20 min (eller orimligt långt fram) tas bort
-    return this.items.filter((o) => now - o.observedAt <= this.ttlMs && o.observedAt - now <= this.ttlMs);
+  private freshByWall(o: RealtimeObservation): boolean {
+    const w = this.wallNow();
+    return w - o.observedAt <= this.ttlMs && o.observedAt - w <= this.ttlMs;
+  }
+
+  /** Släpper observationer som är för gamla både på väggklockan och vyns klocka; sparar om något togs bort. */
+  private housekeep(now: number): void {
+    const keep = this.items.filter((o) => this.freshByWall(o) || Math.abs(now - o.observedAt) <= this.ttlMs);
+    if (keep.length !== this.items.length) {
+      this.items = keep;
+      this.persist();
+    }
+  }
+
+  /** Bara observationer som är färska på väggklockan sparas (simulatorns påhittade tider sparas inte). */
+  private persist(): void {
+    writeJson(this.store, this.key, this.items.filter((o) => this.freshByWall(o)));
   }
 }
 

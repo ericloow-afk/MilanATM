@@ -18,6 +18,8 @@ import { TopBar, type BarAction } from './bar';
 import { MapClock } from './clock';
 import { esc, fmtCount, fmtDate, fmtDist, fmtHM } from './format';
 import { lineBadge } from '../ui/line-badge';
+import { arrivalsHtml, arrivalsKey, confirmText, updateArrivalTexts, type ArrivalRow } from '../ui/arrivals';
+import { csvFilename, exportCsv } from '../ui/download';
 import { TrainMarkers } from './markers';
 import { addOverlays, setUserFix } from './overlays';
 import { trainSchedule, validityInfo } from './schedule';
@@ -230,8 +232,12 @@ notice.addEventListener('click', (e) => {
 });
 
 // ---------- bottenpanel ----------
-let sheetMode: 'list' | 'train' | null = null;
+let sheetMode: 'list' | 'train' | 'station' | null = null;
 let sheetKey = '';
+/** vald station ("Tåget kom nu"), eller null */
+let selectedStation: string | null = null;
+/** bekräftelse efter senaste "Tåget kom nu" (visas med Ångra tills panelen byter station) */
+let arriveConfirm: { text: string; undo: boolean } | null = null;
 
 function refPoint(): { lat: number; lon: number } {
   if (userFix) return userFix;
@@ -240,6 +246,7 @@ function refPoint(): { lat: number; lon: number } {
 }
 
 function renderSheet(): void {
+  if (selectedStation) return renderStation(selectedStation);
   if (selectedId && meta.has(selectedId)) renderTrain(meta.get(selectedId)!);
   else if (selectedId) {
     // tåget har nått slutstationen
@@ -257,7 +264,8 @@ function renderList(): void {
     .map((t) => ({ t, d: haversine(ref.lat, ref.lon, t.lat, t.lon) }))
     .sort((a, b) => a.d - b.d)
     .slice(0, 12);
-  const key = `list:${rt.hub.version}:${arr.map((x) => (x.t.source === 'schedule' ? x.t.id : `${x.t.id}/${sourceLabel(x.t.source, x.t.delaySec)}`)).join(',')}`;
+  const near = userFix ? nearestStation(userFix.lat, userFix.lon) : null;
+  const key = `list:${rt.hub.version}:${near?.id ?? ''}:${arr.map((x) => (x.t.source === 'schedule' ? x.t.id : `${x.t.id}/${sourceLabel(x.t.source, x.t.delaySec)}`)).join(',')}`;
   if (sheetMode === 'list' && key === sheetKey) {
     // uppdatera bara avstånd och antal
     sheet.body.querySelectorAll<HTMLElement>('[data-d]').forEach((n, i) => (n.textContent = fmtDist(arr[i].d)));
@@ -275,9 +283,92 @@ function renderList(): void {
     .join('');
   const anyRealtime = arr.some(({ t }) => t.source !== 'schedule');
   sheet.body.innerHTML = `<div class="summary"><strong><span data-n class="num">${curTrains.size}</span> tåg</strong><span class="muted">${userFix ? 'närmast dig' : 'närmast kartans mitt'}</span></div>
+    ${near ? `<button type="button" class="btn secondary near-station" data-station="${esc(near.id)}">Tåget kom nu vid ${esc(near.name)}</button>` : ''}
     ${arr.length ? `<ul class="list" aria-label="Tåg i närheten">${rows}</ul>` : '<p class="footnote">Inga tåg kör just nu. Använd klockan överst för att välja en annan tid.</p>'}
     ${lineStatusHtml()}
-    <p class="footnote">${anyRealtime ? 'Tåg utan märkning följer tidtabellen.' : 'Positionerna är beräknade ur tidtabellen, inte realtid.'} Tidtabell: Comune di Milano / ATM (CC BY 4.0).</p>`;
+    <p class="footnote">${anyRealtime ? 'Tåg utan märkning följer tidtabellen.' : 'Positionerna är beräknade ur tidtabellen, inte realtid.'} Tryck på en station för att justera ett tåg som just kom in. Tidtabell: Comune di Milano / ATM (CC BY 4.0).</p>`;
+}
+
+/** Närmaste station inom 600 m (för "Tåget kom nu" utan att leta på kartan). */
+function nearestStation(lat: number, lon: number): { id: string; name: string } | null {
+  let best: { id: string; name: string; d: number } | null = null;
+  for (const s of data.stops) {
+    const d = haversine(lat, lon, s.lat, s.lon);
+    if (d <= 600 && (!best || d < best.d)) best = { id: s.id, name: s.name, d };
+  }
+  return best;
+}
+
+/** Linjer som stannar vid en station (för brickorna i stationspanelen). */
+function linesAt(stopId: string): string[] {
+  const out = new Set<string>();
+  for (const p of data.patterns) if (p.stops.some((s) => data.stops[s].id === stopId)) out.add(p.line);
+  return [...out].sort();
+}
+
+/** Stationspanelen: nästa tåg per riktning och "Tåget kom nu". */
+function renderStation(stopId: string): void {
+  const now = clock.now(Date.now()).getTime();
+  const canAdjust = clock.isLive;
+  const up = rt.upcoming(stopId, now);
+  const rows: ArrivalRow[] = up.map((u) => {
+    const line = data.directions.find((d) => d.id === u.direction)?.line ?? '';
+    return {
+      direction: u.direction,
+      directionName: dirName(u.direction),
+      line,
+      lineLabel: lineName(line),
+      trains: u.trains.map((t) => ({ etaMs: t.etaMs, atStation: t.atStation, source: t.run.source, delaySec: t.delaySec })),
+    };
+  });
+  const state = { rows, now, canAdjust, confirm: arriveConfirm, logCount: rt.log.size };
+  const key = `station:${stopId}:${arrivalsKey(state)}`;
+  if (sheetMode === 'station' && sheetKey === key) {
+    updateArrivalTexts(sheet.body, state); // bara texter: knapparna byts inte ut mitt i ett tryck
+    return;
+  }
+  const html = arrivalsHtml(state);
+  const keepFocus = sheet.body.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset.arrive : undefined;
+  sheetMode = 'station';
+  sheetKey = key;
+  const badges = linesAt(stopId).map((l) => lineBadge(l, lineName(l), 'md')).join('');
+  sheet.body.innerHTML = `<div class="head">
+      ${badges}
+      <div class="titles"><h2 id="sel-title" tabindex="-1">${esc(stopName(stopId))}</h2><div class="sub muted">Station</div></div>
+      <button class="btn icon ghost close" type="button" aria-label="Stäng stationen" data-close><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <div class="station-body">${html}</div>
+    <p class="footnote">Observationerna sparas bara på den här enheten. Loggen visar hur mycket tidtabellen avviker per linje och tid på dygnet.</p>`;
+  if (keepFocus) sheet.body.querySelector<HTMLElement>(`[data-arrive="${CSS.escape(keepFocus)}"]`)?.focus({ preventScroll: true });
+}
+
+function selectStation(id: string | null, opts: { focus?: boolean } = {}): void {
+  if (id && selectedId) select(null, { quiet: true });
+  if (id !== selectedStation) arriveConfirm = null;
+  selectedStation = id;
+  sheetKey = '';
+  if (id) {
+    if (sheet.state === 'peek') sheet.setState('half');
+    announce(`Station ${stopName(id)} vald`);
+  }
+  renderSheet();
+  if (id && opts.focus !== false) (sheet.body.querySelector('#sel-title') as HTMLElement | null)?.focus({ preventScroll: true });
+}
+
+function arriveNow(direction: string): void {
+  if (!selectedStation || !clock.isLive) return;
+  const dir = data.directions.find((d) => d.id === direction);
+  if (!dir) return;
+  const res = rt.trainArrived({ line: dir.line, direction, stopId: selectedStation, now: Date.now() });
+  if (!res.ok) {
+    toast(`Hittade inget tåg mot ${dir.name} inom 10 minuter i tidtabellen.`);
+    return;
+  }
+  const text = confirmText(lineName(dir.line), dir.name, res.match.delaySec) + (res.savedToDevice ? '' : ' (kunde inte sparas på enheten)');
+  arriveConfirm = { text, undo: true };
+  announce(text);
+  sheetKey = '';
+  renderSheet();
 }
 
 /** Linjestatus från en statuskälla (om någon är aktiv). Texten visas oförändrad med källans uppdateringstid. */
@@ -346,10 +437,27 @@ function sheetClickHandlers(): void {
     const t = e.target as HTMLElement;
     if (!sheet?.body.contains(t)) return;
     const row = t.closest<HTMLElement>('button[data-id]');
+    const btn = t.closest<HTMLButtonElement>('button');
     if (row) {
       returnFocus = row;
       select(row.dataset.id!, { fly: true, focus: true });
-    } else if (t.closest('[data-close]')) select(null, {});
+    } else if (btn?.dataset.station) {
+      selectStation(btn.dataset.station);
+    } else if (btn?.dataset.arrive) {
+      arriveNow(btn.dataset.arrive);
+    } else if (btn?.hasAttribute('data-undo')) {
+      if (rt.undoLast(Date.now())) toast('Justeringen är ångrad.');
+      arriveConfirm = null;
+      sheetKey = '';
+      renderSheet();
+    } else if (btn?.hasAttribute('data-export')) {
+      void exportCsv(rt.log.toCsv(), csvFilename()).then((how) =>
+        toast(how === 'file' ? `Loggen sparad som fil (${rt.log.size} rader).` : how === 'clipboard' ? 'Loggen kopierad till urklipp.' : 'Det gick inte att exportera loggen.'),
+      );
+    } else if (t.closest('[data-close]')) {
+      if (selectedStation) selectStation(null);
+      else select(null, {});
+    }
   });
 }
 
@@ -358,6 +466,7 @@ function select(id: string | null, opts: { fly?: boolean; focus?: boolean; quiet
   const prev = selectedId;
   selectedId = id;
   sheetKey = '';
+  if (id) selectedStation = null;
   if (id) {
     const t = meta.get(id);
     if (t) {
@@ -388,7 +497,8 @@ document.addEventListener('keydown', (e) => {
     if (bar.isOpen) {
       bar.toggle(false);
       bar.focusButton();
-    } else if (selectedId) select(null, {});
+    } else if (selectedStation) selectStation(null);
+    else if (selectedId) select(null, {});
   }
 });
 
@@ -485,6 +595,7 @@ function locate(): void {
 }
 locateBtn.addEventListener('click', locate);
 listBtn.addEventListener('click', () => {
+  selectedStation = null;
   select(null, {});
   sheet.setState(sheet.state === 'peek' ? 'half' : 'peek');
 });
@@ -496,7 +607,9 @@ function refreshRuns(nowMs: number): void {
   const horizonSec = (TICK_MS / 1000) * Math.max(clock.scale, 1) * 1.5 + 1;
   runs = activeTrips(data, new Date(nowMs), horizonSec);
   refuse(nowMs);
-  rt.tick(Date.now()); // källorna frågas i verklig tid (nätkällor högst var 30:e s, inte när fliken är dold); nya svar syns nästa bildruta
+  const focus = refPoint();
+  rt.setMockFocus(focus.lat, focus.lon); // används bara av mock-källan i dev
+  rt.tick(); // källorna frågas i verklig tid (nätkällor högst var 30:e s, inte när fliken är dold); nya svar syns nästa bildruta
   rt.guard.prune(nowMs);
   perf.tickMs = performance.now() - t0;
 }
@@ -625,11 +738,12 @@ async function start(): Promise<void> {
   }
   if (import.meta.env.DEV) {
     // för felsökning i dev
-    const w = window as unknown as { __map: MlMap; __rt: RealtimeSession; __trains: () => FusedTrain[]; __select: (id: string) => void };
+    const w = window as unknown as { __map: MlMap; __rt: RealtimeSession; __trains: () => FusedTrain[]; __select: (id: string) => void; __station: (id: string) => void };
     w.__map = map;
     w.__rt = rt;
     w.__trains = () => [...curTrains.values()];
     w.__select = (id) => select(id, { fly: true });
+    w.__station = (id) => selectStation(id);
   }
   map.touchZoomRotate.disableRotation();
   map.keyboard.disableRotation();
@@ -682,6 +796,24 @@ async function start(): Promise<void> {
   sheet = new BottomSheet(app, reducedMotion);
   markers = new TrainMarkers(map, { onSelect: (id) => select(id, { fly: true, focus: true }), describe, lineLabel: lineName });
   map.getCanvas().addEventListener('click', () => selectedId && select(null, {}));
+  // Tryck på en station (generös träffyta, prickarna är små) öppnar "Tåget kom nu" för den
+  map.on('click', (e) => {
+    if (!map.getLayer('stations')) return;
+    const { x, y } = e.point;
+    const hits = map.queryRenderedFeatures([[x - 18, y - 18], [x + 18, y + 18]], { layers: ['stations'] });
+    let best: { id: string; d: number } | null = null;
+    for (const f of hits) {
+      const [lon, lat] = (f.geometry as unknown as { coordinates: [number, number] }).coordinates;
+      const p = map.project([lon, lat]);
+      const d = Math.hypot(p.x - x, p.y - y);
+      const id = String(f.properties?.id ?? '');
+      if (id && (!best || d < best.d)) best = { id, d };
+    }
+    if (best) selectStation(best.id);
+    else if (selectedStation) selectStation(null);
+  });
+  map.on('mouseenter', 'stations', () => (map.getCanvas().style.cursor = 'pointer'));
+  map.on('mouseleave', 'stations', () => (map.getCanvas().style.cursor = ''));
   requestAnimationFrame(frame);
 }
 void start();

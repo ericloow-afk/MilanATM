@@ -103,6 +103,17 @@ async function expectHittable(page: Page, selector: string): Promise<Hit> {
   return h;
 }
 
+/** Väntar tills elementets position ligger still (t.ex. efter bottenpanelens animation). */
+async function settle(page: Page, selector: string): Promise<void> {
+  let prev = '';
+  for (let i = 0; i < 30; i++) {
+    const b = JSON.stringify(await page.locator(selector).boundingBox());
+    if (b === prev) return;
+    prev = b;
+    await page.waitForTimeout(80);
+  }
+}
+
 /** Tryck med riktig touch på elementets mittpunkt. */
 async function tap(page: Page, selector: string): Promise<void> {
   const h = await expectHittable(page, selector);
@@ -287,6 +298,34 @@ describe.skipIf(skip)('kartvyn (390×844, touch)', () => {
     await expect.poll(() => page.locator('#sel-title').count()).toBe(0);
     await ctx.close();
   });
+
+  it('tryck på en station öppnar "Tåget kom nu"; när klockan är spolad är knapparna avstängda', async () => {
+    const { ctx, page } = await openMap();
+    // spola till ett giltigt datum mitt på dagen (ingen "Nu"): panelen ska förklara att justering kräver Nu
+    await tap(page, '#bar-btn');
+    await page.locator('#bar-date').fill('2026-11-06');
+    await page.locator('#bar-time-in').fill('12:00');
+    await tap(page, '#bar-btn');
+    // centrera på Duomo (M1) och tryck på stationsprickan
+    const pt = await page.evaluate(async () => {
+      const d = await (await fetch('metro.json')).json();
+      const s = d.stops.find((x: { id: string }) => x.id === 'DUOMO M1');
+      const m = (window as unknown as { __map: { jumpTo(o: unknown): void; project(c: [number, number]): { x: number; y: number }; once(e: string, f: () => void): void } }).__map;
+      m.jumpTo({ center: [s.lon, s.lat - 0.002], zoom: 15 });
+      await new Promise((r) => m.once('idle', () => r(null)));
+      return m.project([s.lon, s.lat]);
+    });
+    await page.touchscreen.tap(pt.x, pt.y);
+    await expect.poll(() => page.locator('#sel-title').innerText()).toBe('Duomo');
+    await page.waitForSelector('.arr-row');
+    await settle(page, '.sheet'); // panelen glider upp (ca 0,3 s); mät inte mitt i animationen
+    expect(await page.locator('.arr-hint').innerText()).toContain('Gå till Nu');
+    expect(await page.locator('[data-arrive]').first().isDisabled()).toBe(true);
+    await sweep(page, 'kartan, stationspanel');
+    await tap(page, '[data-close]');
+    await expect.poll(() => page.locator('#sel-title').count(), { timeout: 4000 }).toBe(0);
+    await ctx.close();
+  });
 });
 
 describe.skipIf(skip)('AR-vyn (390×844, touch)', () => {
@@ -353,6 +392,34 @@ describe.skipIf(skip)('AR-vyn (390×844, touch)', () => {
     const cal = await style('#b-cal');
     expect(tools).toEqual(cal);
     expect(tools.opacity).toBe('1');
+    await ctx.close();
+  });
+
+  it('"Tåget kom nu" i simulatorn: justerar närmaste tåg, visar "justerad", loggar och kan ångras', async () => {
+    const { ctx, page } = await newPage();
+    await page.goto(`${base}/ar.html?sim=1`);
+    await page.waitForSelector('#sim-handle');
+    await tap(page, '#sim-handle');
+    await tap(page, '#sim-tp button[data-tp="noon"]'); // giltig dag 12:00: tåg finns vid Duomo
+    await tap(page, '#sim-handle');
+    await tap(page, '#b-arrive');
+    await expect.poll(() => page.locator('#arrive').isVisible()).toBe(true);
+    expect(await page.locator('#b-arrive').getAttribute('aria-expanded')).toBe('true');
+    await expect.poll(() => page.locator('#arrive-title').innerText()).toBe('Duomo');
+    await page.waitForSelector('#arrive .arr-row');
+    await sweep(page, 'AR, Tåget kom nu öppen');
+    const firstBtn = '#arrive .arr-row:first-child [data-arrive]';
+    await tap(page, firstBtn);
+    await expect.poll(() => page.locator('#arrive .arr-confirm').innerText()).toMatch(/mot .+:/);
+    await expect.poll(() => page.locator('#arrive .arr-row:first-child .arr-src').innerText()).toMatch(/^justerad /);
+    await expect.poll(() => page.locator('#arrive .arr-log').innerText()).toMatch(/Logg: 1 observation/);
+    expect(await page.locator('#arrive [data-export]').isEnabled()).toBe(true);
+    await tap(page, '#arrive [data-undo]');
+    await expect.poll(() => page.locator('#arrive .arr-confirm').innerText()).toContain('ångrad');
+    await expect.poll(() => page.locator('#arrive .arr-row:first-child .arr-src').innerText()).toBe('tidtabell');
+    await expect.poll(() => page.locator('#arrive .arr-log').innerText()).toMatch(/Logg: 0 observationer/);
+    await tap(page, '#arrive-close');
+    await expect.poll(() => page.locator('#arrive').isVisible()).toBe(false);
     await ctx.close();
   });
 

@@ -67,3 +67,18 @@ input[type="range"].range:focus-visible::-webkit-slider-thumb { box-shadow: var(
 @media (prefers-reduced-motion: reduce) {
   .btn[aria-busy="true"] svg { animation: none; }
 }
+
+/* ---------- "Tåget kom nu" (src/ui/arrivals.ts), delas av kartan och AR-vyn ---------- */
+.arr-hint { margin: 0 0 var(--space-2); font-size: var(--fs-xs); line-height: var(--lh-normal); }
+.arrivals { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.arr-row { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) 0; border-top: 1px solid var(--hairline); }
+.arr-row:first-child { border-top: 0; }
+.arr-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.arr-dir { font-weight: var(--fw-semibold); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.arr-times { font-size: var(--fs-sm); color: var(--text); font-variant-numeric: tabular-nums; }
+.arr-src { font-size: var(--fs-xs); color: var(--text-muted); }
+.arr-src[data-src="adjusted"], .arr-src[data-src="live"] { color: var(--text); font-weight: var(--fw-semibold); }
+.arr-btn { flex: none; padding: 0 var(--space-3); }
+.arr-empty { margin: var(--space-2) 0; font-size: var(--fs-sm); }
+.arr-confirm { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-top: var(--space-2); padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3); border: 1px solid var(--hairline-strong); border-radius: var(--radius-md); font-size: var(--fs-sm); }
+.arr-log { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-top: var(--space-3); font-size: var(--fs-xs); }

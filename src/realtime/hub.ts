@@ -42,28 +42,31 @@ export class RealtimeHub {
     return s.kind === 'manual' ? s.minIntervalMs : Math.max(s.minIntervalMs, MIN_NETWORK_INTERVAL_MS);
   }
 
-  /** Anropas ungefär en gång per sekund. */
-  tick(now: number): void {
+  /**
+   * Anropas ungefär en gång per sekund. `wall` = verklig tid (styr intervallen), `view` = vyns klocka som
+   * källorna får (simulerad tid i AR-simulatorn; annars samma som wall).
+   */
+  tick(wall: number, view = wall): void {
     const hidden = this.opts.isHidden?.() ?? false;
     for (const s of this.sources) {
       const st = this.state.get(s.id)!;
       if (!s.enabled || st.blocked || st.inFlight) continue;
       if (hidden && s.kind !== 'manual') continue;
-      if (now - st.last < this.intervalFor(s)) continue;
-      void this.poll(s, now);
+      if (wall - st.last < this.intervalFor(s)) continue;
+      void this.poll(s, wall, view);
     }
   }
 
   /** Fråga en källa direkt (t.ex. ManualSource efter ett knapptryck). Respekterar inte intervallet: bara för lokala källor. */
-  async poll(s: RealtimeSource, now: number): Promise<void> {
+  async poll(s: RealtimeSource, wall: number, view = wall): Promise<void> {
     const st = this.state.get(s.id);
     if (!st || st.inFlight) return;
     st.inFlight = true;
-    st.last = now;
+    st.last = wall;
     try {
-      const obs = await s.observe(now);
+      const obs = await s.observe(view);
       st.error = null;
-      st.updatedAt = now;
+      st.updatedAt = wall;
       if (!sameObservations(st.obs, obs)) {
         st.obs = obs;
         this.version++;
@@ -84,9 +87,9 @@ export class RealtimeHub {
     }
   }
 
-  pollById(id: string, now: number): Promise<void> {
+  pollById(id: string, wall: number, view = wall): Promise<void> {
     const s = this.sources.find((x) => x.id === id);
-    return s ? this.poll(s, now) : Promise.resolve();
+    return s ? this.poll(s, wall, view) : Promise.resolve();
   }
 
   observations(): RealtimeObservation[] {

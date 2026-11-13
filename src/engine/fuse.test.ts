@@ -1,52 +1,18 @@
 /** fuse(): tidtabell + realtidsobservationer. Syntetisk rak linje med 12 stationer, 120 s mellan stationerna. */
 import { describe, expect, it } from 'vitest';
-import { shapeIndex } from '../geo';
 import { activeTrips, DEFAULT_OPTIONS, positionAt } from './index';
 import { adjustTiming, fuse, matchObservation, PositionGuard, positionAtFused, type FusedRun } from './fuse';
-import type { LatLon, MetroData } from './types';
+import { LINE_N, LINE_REV0, LINE_T0, LINE_T1, lineArr, lineData, lineDep, lineMs } from './testdata-line';
 import type { RealtimeObservation } from '../realtime/types';
 
-const N = 12;
-const lonOf = (i: number) => 9.1 + 0.005 * i;
-const fwdShape: LatLon[] = Array.from({ length: N }, (_, i) => [45.4, lonOf(i)]);
-const revShape: LatLon[] = fwdShape.slice().reverse();
-const fwd = shapeIndex(fwdShape);
-const rev = shapeIndex(revShape);
-const START = 28800; // 08:00
-const HEADWAY = 240;
-
-const data: MetroData = {
-  meta: { validFrom: '2026-10-26', validTo: '2026-11-30' },
-  lines: [{ id: 'M9', name: '9', color: '#123456' }],
-  stops: Array.from({ length: N }, (_, i) => ({ id: `P${i}`, name: `P${i}`, lat: 45.4, lon: lonOf(i) })),
-  directions: [
-    { id: 'M9>P11', line: 'M9', terminus: 'P11', name: 'P11' },
-    { id: 'M9>P0', line: 'M9', terminus: 'P0', name: 'P0' },
-  ],
-  shapeGeoms: [fwdShape, revShape],
-  shapes: { FWD: 0, REV: 1 },
-  patterns: [
-    { line: 'M9', dir: 0, shape: 'FWD', shapeQuality: 'ok', stops: [...Array(N).keys()], sd: fwd.cum.slice(), a: Array.from({ length: N }, (_, i) => 120 * i), w: Array(N).fill(0) },
-    { line: 'M9', dir: 1, shape: 'REV', shapeQuality: 'ok', stops: [...Array(N).keys()].reverse(), sd: rev.cum.slice(), a: Array.from({ length: N }, (_, i) => 120 * i), w: Array(N).fill(0) },
-  ],
-  services: [{ id: 's0', add: [20261106], remove: [] }],
-  trips: [
-    // framåt: var fjärde minut 08:00–09:00
-    ...Array.from({ length: 16 }, (_, k): [number, number, number] => [0, 0, START + k * HEADWAY]),
-    // bakåt: ett enda tåg 08:00 (för stora förseningar utan att grannar matchar)
-    [1, 0, START],
-  ],
-};
-
-const rome0 = Date.UTC(2026, 10, 5, 23, 0, 0); // 6/11 00:00 Rom
-/** epoch-ms för en tid relativt 08:00-tripens start */
-const ms = (rel: number, start = START) => rome0 + (start + rel) * 1000;
-const T0 = `0:0:20261106:${START}`;
-const T1 = `0:0:20261106:${START + HEADWAY}`;
-const REV0 = `1:0:20261106:${START}`;
-// Med uppehållsmodellen (22 s, ändstation 60 s): arr[j] = 120j − 22, dep[j] = 120j för j = 1..10.
-const ARR = (j: number) => 120 * j - 22;
-const DEP = (j: number) => 120 * j;
+const N = LINE_N;
+const data = lineData;
+const ms = lineMs;
+const T0 = LINE_T0;
+const T1 = LINE_T1;
+const REV0 = LINE_REV0;
+const ARR = lineArr;
+const DEP = lineDep;
 
 const runsAt = (t: number) => activeTrips(data, new Date(t), 0, DEFAULT_OPTIONS);
 const obs = (o: Partial<RealtimeObservation> & Pick<RealtimeObservation, 'stopId' | 'observedAt'>): RealtimeObservation => ({
