@@ -75,7 +75,8 @@ export class RealtimeSession {
       new OfficialAtmSource({ data: cfg.data, url: env.officialUrl, apiKey: env.officialKey, apiKeyHeader: env.officialKeyHeader }),
       new StatusSource({ url: env.statusUrl, apiKey: env.statusKey, apiKeyHeader: env.statusKeyHeader }),
     ];
-    if (cfg.mock) sources.push(this.mockLive(), new StatusSource({ id: 'mock-status', load: () => import('./fixtures/line-status.sample.json').then((m) => m.default) }));
+    // import.meta.env.DEV: Vite tar bort grenen (och den påhittade fixturen) ur produktionsbygget
+    if (import.meta.env.DEV && cfg.mock) sources.push(this.mockLive(), new StatusSource({ id: 'mock-status', load: () => import('./fixtures/line-status.sample.json').then((m) => m.default) }));
     this.hub = new RealtimeHub(sources, { isHidden: cfg.isHidden });
   }
 

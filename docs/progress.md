@@ -177,3 +177,28 @@ Ingen ny funktionalitet; motor, geo och metro.json är orörda. Mer i `docs/desi
 - **Attribution:** egen 44×44-knapp (ⓘ) i stället för MapLibres, hopfälld på smala skärmar, panel som fälls upp över knappen (aldrig över bottenpanelen).
 - **AR:** "Verktyg" som övriga knappar (inte ghost); kantindikatorer hålls 8 px från skärmkanten (hela etiketten).
 - **Startsidan:** "AR-vyn" bryts inte; ny text under "Vad som saknas".
+
+## Realtidslager (2026-11-13)
+- **Steg 0, källor:** `docs/realtime-sources.md`. Inget öppet GTFS-RT eller realtidsdataset för ATM:s metro hittades, varken i Mobility Database (hela katalogen), Transitland eller på dati.comune.milano.it. E015 "Stato Linee Metropolitane 2.0" (ATM) ger bara linjestatus och kräver ett anslutningsavtal för juridiska personer med säte i Italien (SPID/CIE/CNS). Giromilano svarade 403 (Akamai) på första ärliga anropet och proben stoppades. Svaret är sparat i `test/fixtures/giromilano/`. Dokumentet har kontaktvägar med källhänvisning samt mejlmallar på italienska och engelska. `tools/probe-atm.mjs` finns för framtida kontroller: 30 s mellan anrop, stopp vid 401/403/429/HTML.
+- **Steg 1, lager:** `src/realtime` innehåller:
+  - typer
+  - `ManualSource`
+  - `StatusSource`: avstängd utan nyckel, fixture i tester och dev-mock
+  - `OfficialAtmSource`: skelett för GTFS-RT som JSON, avstängt utan URL
+  - en hub som frågar nätkällor högst var 30:e s och aldrig när fliken är dold, och som slutar fråga en källa som nekar
+  - `session` för kartan och AR
+
+  `src/engine/fuse.ts` matchar ±10 min. Förseningen halveras per 5 stopp, återhämtningen är begränsad, uppehållen behålls och `PositionGuard` förhindrar rörelse bakåt. Kartan (lista och panel) och AR-etiketten visar "tidtabell", "justerad +N" eller "live". Detaljer i `docs/data-notes.md`.
+- **Steg 2, "Tåget kom nu":**
+  - Kartan: tryck på en station, eller "Tåget kom nu vid <station>" när GPS är på. Panelen visar nästa tåg per riktning, och knappen justerar närmaste tåg i riktningen direkt. Ångra finns.
+  - AR-vyn: samma panel för närmaste station inom 500 m, även i simulatorn.
+  - Sparas 20 min i `localStorage`. Varje observation loggas och kan exporteras som CSV (fil, annars urklipp).
+- **Steg 3, proxy:** behövs inte. Ingen källa kräver den, eftersom det inte finns någon användbar källa att proxa.
+- **Verifierat:**
+  - 283 enhetstester gröna, tsc och bygget ok.
+  - Interaktionstestet har 17 fall i Chrome 390×844 med touch, varav två nya: station på kartan, och "Tåget kom nu" med Ångra i simulatorn.
+  - JS-tid per bildruta med 132 tåg (riktig metro.json, fre 08:30) är ca 0,04 ms både före och efter lagret, med och utan justeringar.
+  - Utan observationer är positionerna identiska med `positionAt` (test).
+  - Skärmdumpar i 390×844 av kartan och AR-simulatorn i lägena tidtabell, justerad och live (mock).
+  - Mock och påhittad linjestatus finns inte i produktionsbygget.
+- **Ej verifierat:** på iPhone, och FPS i Safari. Webbläsarpanelen pausar bildrutor när den är dold, så bara JS-tiden är mätt. Hur väl ±10 min-matchningen träffar rätt tåg i verklig trafik visar loggen först efter fältbruk.
