@@ -19,6 +19,8 @@ export interface UiHooks {
   onRecord(): void;
   onMark(): void;
   onCopy(): void;
+  /** "Rutnät" i Verktyg: av → svagt → normalt */
+  onGrid(): void;
   /** "Jag står på en perrong" (startvyn): starta sensorerna och öppna stationsväljaren */
   onStartPlatform(): void;
   /** "Perrong" i verktygsfältet eller bannern: öppna stationsväljaren */
@@ -77,7 +79,7 @@ export class ArUi {
     </div>`);
   readonly banner = h('<div id="banner" class="panel" role="status" hidden></div>');
   /** "Rikta telefonen nedåt": tåg finns inom radien men inget syns i bild */
-  readonly aim = h('<div id="aim" class="aim panel" role="status" aria-live="polite" hidden><span class="aim-arrow" aria-hidden="true"></span><span class="aim-text"></span></div>');
+  readonly aim = h('<div id="aim" class="aim panel" role="status" aria-live="polite" hidden><svg class="aim-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h16M13 5l7 7-7 7"/></svg><span class="aim-text"></span></div>');
   readonly info = h('<div id="info" class="panel" role="region" aria-label="Valt tåg" hidden></div>');
   readonly toolbar = h(`<div id="toolbar">
       <button type="button" class="btn" id="b-cal">Kalibrera</button>
@@ -89,8 +91,10 @@ export class ArUi {
         <button type="button" class="btn" id="b-rec">Spela in 30 s</button>
         <button type="button" class="btn" id="b-mark" disabled>Markera</button>
         <button type="button" class="btn" id="b-copy" disabled>Kopiera logg</button>
+        <button type="button" class="btn" id="b-grid">Rutnät: av</button>
         <div class="muted rec-note" id="rec-note"></div>
         <textarea id="csv" readonly hidden aria-label="Logg som CSV"></textarea>
+        <div class="dbg-layers" id="dbg-layers" hidden><div class="muted small">Lager (felsökning)</div><div class="dbg-grid" id="dbg-buttons"></div><pre class="dbg-state small" id="dbg-state"></pre></div>
       </div>
     </div>`);
   /** Stationsväljaren (innehållet ritas av main.ts) */
@@ -161,8 +165,7 @@ export class ArUi {
     private debug = false,
   ) {
     this.hudBox.insertBefore(this.banner, this.hudBox.querySelector('#hud-details')); // banner staplas under HUD-raden, aldrig ovanpå utfälld text
-    this.hudBox.insertBefore(this.platform, this.banner);
-    root.append(this.labels, this.aim, this.hudBox, this.picker, this.info, this.toolbar, this.calPanel, this.arrivePanel, this.simSheet, this.startBox);
+    root.append(this.labels, this.aim, this.hudBox, this.platform, this.picker, this.info, this.toolbar, this.calPanel, this.arrivePanel, this.simSheet, this.startBox);
     this.toolbar.hidden = true;
     this.hudBox.hidden = true;
     this.bind();
@@ -241,6 +244,7 @@ export class ArUi {
     this.$('#b-rec').addEventListener('click', () => this.hooks.onRecord());
     this.$('#b-mark').addEventListener('click', () => this.hooks.onMark());
     this.$('#b-copy').addEventListener('click', () => this.hooks.onCopy());
+    this.$('#b-grid').addEventListener('click', () => this.hooks.onGrid());
     const fov = this.$<HTMLInputElement>('#fov');
     fov.addEventListener('input', () => {
       this.$('#fov-v').textContent = `${fov.value}°`;
@@ -299,6 +303,29 @@ export class ArUi {
   }
 
   onArriveToggle?: (open: boolean) => void;
+  /** Felsökningsknappar: ett per lager, aria-pressed = synligt. */
+  setDebugLayers(names: [id: string, label: string][], onToggle: (id: string, on: boolean) => void): void {
+    const box = this.$('#dbg-layers');
+    box.hidden = false;
+    const btns = this.$('#dbg-buttons');
+    btns.innerHTML = names.map(([id, label]) => `<button type="button" class="btn secondary" data-layer="${id}" aria-pressed="true">${esc(label)}</button>`).join('');
+    btns.onclick = (e) => {
+      const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-layer]');
+      if (!b) return;
+      const on = b.getAttribute('aria-pressed') !== 'true';
+      b.setAttribute('aria-pressed', String(on));
+      onToggle(b.dataset.layer!, on);
+    };
+  }
+  setDebugState(text: string): void {
+    const el = this.$('#dbg-state');
+    if (el.textContent !== text) el.textContent = text;
+  }
+
+  setGridLabel(text: string): void {
+    this.$('#b-grid').textContent = `Rutnät: ${text}`;
+  }
+
   onTap?: (x: number, y: number) => void;
   onLook?: (dx: number, dy: number) => void;
 
@@ -364,7 +391,8 @@ export class ArUi {
 
   /** Perrongkortet (null = dölj). */
   setPlatform(s: { badge: string; name: string; dir: string; next: string; src: string; hint: string; aligned: boolean } | null): void {
-    this.platform.hidden = !s;
+    // i nederkanten, så att horisonten (där tåget kommer ut ur tunneln) är fri; viker för andra paneler där
+    this.platform.hidden = !s || !this.info.hidden || !this.arrivePanel.hidden || !this.calPanel.hidden;
     this.root.dataset.platform = s ? '1' : '';
     if (!s) return;
     const set = (id: string, v: string, html = false) => {

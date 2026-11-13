@@ -1,6 +1,7 @@
 /* AR-vyn. Värden från src/styles/tokens.css, delade komponenter från src/styles/components.css. */
 html, body { height: 100%; overflow: hidden; touch-action: none; }
-#bg { position: fixed; inset: 0; background: var(--bg); background-image: linear-gradient(var(--hairline) 1px, transparent 1px), linear-gradient(90deg, var(--hairline) 1px, transparent 1px); background-size: 48px 48px; }
+/* Simulatorns bakgrund i stället för kameran: enfärgad, så att den inte förväxlas med scenens rutnät */
+#bg { position: fixed; inset: 0; background: var(--bg); }
 #cam { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: var(--z-video); }
 #gl { position: fixed; inset: 0; width: 100%; height: 100%; touch-action: none; z-index: var(--z-canvas); }
 #ui { --ar-bottom: 0px; position: fixed; inset: 0; pointer-events: none; z-index: var(--z-labels); }
@@ -89,9 +90,7 @@ html, body { height: 100%; overflow: hidden; touch-action: none; }
 /* ---------- "Rikta telefonen nedåt" ---------- */
 .aim { position: fixed; left: 50%; top: 58%; transform: translateX(-50%); z-index: var(--z-panel); display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-4); min-height: var(--tap-min); box-sizing: border-box; font-weight: var(--fw-semibold); font-size: var(--fs-md); white-space: nowrap; pointer-events: none; }
 .aim[hidden] { display: none; }
-.aim-arrow { flex: none; width: 18px; height: 18px; position: relative; }
-.aim-arrow::before { content: ''; position: absolute; left: 1px; top: 8px; width: 13px; height: 2px; background: var(--text); }
-.aim-arrow::after { content: ''; position: absolute; right: 1px; top: 4px; width: 8px; height: 8px; border-top: 2px solid var(--text); border-right: 2px solid var(--text); transform: rotate(45deg); }
+.aim-arrow { flex: none; width: 22px; height: 22px; fill: none; stroke: var(--text); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 
 /* ---------- Perrongläget: stationsväljare och perrongkort ---------- */
 #banner { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
@@ -113,7 +112,11 @@ html, body { height: 100%; overflow: hidden; touch-action: none; }
 .picker-row .pr-sub { color: var(--text-muted); font-size: var(--fs-xs); }
 .picker-row .pr-dist { flex: none; color: var(--text-muted); font-size: var(--fs-xs); }
 .picker-empty { color: var(--text-muted); font-size: var(--fs-sm); }
-.platform { width: 100%; padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-2); font-size: var(--fs-sm); }
+.platform { position: fixed; left: var(--gutter); right: var(--gutter-right); bottom: calc(var(--ar-bottom) + var(--safe-bottom) + var(--space-2)); z-index: var(--z-panel); max-width: 520px; margin-inline: auto; box-sizing: border-box; padding: var(--space-3); display: grid; grid-template-columns: 1fr auto; gap: var(--space-1) var(--space-3); align-items: center; font-size: var(--fs-sm); }
+.platform .pf-head { grid-column: 1; }
+.platform .pf-next { grid-column: 2; grid-row: 1; text-align: right; }
+.platform .pf-src { grid-column: 2; text-align: right; margin-top: 0; }
+.platform .pf-hint, .platform #pf-align, .platform .row2 { grid-column: 1 / -1; }
 .platform[hidden] { display: none; }
 .pf-head { display: flex; align-items: center; gap: var(--space-2); }
 .pf-titles { display: flex; flex-direction: column; min-width: 0; }
@@ -124,3 +127,12 @@ html, body { height: 100%; overflow: hidden; touch-action: none; }
 .pf-hint:empty { display: none; }
 .platform .btn { width: 100%; }
 .platform .row2 { display: flex; gap: var(--space-2); }
+
+/* ---------- felsökning (?debug=1) ---------- */
+.dbg-layers[hidden] { display: none; }
+.dbg-grid { display: grid; grid-template-columns: 1fr; gap: var(--space-1); }
+.dbg-grid .btn { min-height: 36px; font-size: var(--fs-xs); }
+.dbg-grid .btn[aria-pressed="false"] { text-decoration: line-through; color: var(--text-muted); }
+.dbg-state { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono); max-width: 112px; }
+body.dbg-no-overlays #bg { display: none; }
+body.dbg-no-overlays #ui .panel { background: transparent; box-shadow: none; }

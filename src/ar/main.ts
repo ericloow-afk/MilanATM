@@ -17,7 +17,8 @@ import { GpsFilter, GpsStatus } from './gps-filter';
 import { LogRecorder, type LogRow } from './log';
 import { nearbyTrains, type NearbyTrain } from './nearby';
 import { edgeIndicator } from './overlay';
-import { ArScene, EYE_HEIGHT_M } from './scene';
+import { ArScene, EYE_HEIGHT_M, TRAIN } from './scene';
+import { buildGridSegments, GRID_LABEL, GRID_LEVELS, gridOpacity, gridVisible, localTracks, type GridLevel, type LocalTrack } from './ground';
 import { RealSource } from './sensors';
 import { SimSource, type SimPlace } from './sim';
 import type { SensorSource, SourceReading } from './source';
@@ -27,6 +28,7 @@ import { lineBadge, lineLabel } from '../ui/line-badge';
 import { arrivalsHtml, arrivalsKey, confirmText, updateArrivalTexts, type ArrivalRow } from '../ui/arrivals';
 import { csvFilename, exportCsv } from '../ui/download';
 import { haversine } from '../geo';
+import { toLocalMeters } from '../geo/enu';
 
 const BUILD_ID = typeof __BUILD_ID__ === 'string' ? __BUILD_ID__ : 'dev';
 const DEBUG = new URLSearchParams(location.search).get('debug') === '1';
@@ -159,8 +161,33 @@ const ui: ArUi = new ArUi(uiRoot, canvas, {
   onPlatform: () => openPicker(),
   onAlignTrack: () => alignTrack(),
   onExitPlatform: () => exitStation(),
+  onGrid: () => {
+    gridLevel = GRID_LEVELS[(GRID_LEVELS.indexOf(gridLevel) + 1) % GRID_LEVELS.length];
+    ui.setGridLabel(GRID_LABEL[gridLevel]);
+    groundKey = '';
+  },
 }, DEBUG);
 ui.setMode(null);
+if (DEBUG) {
+  ui.setDebugLayers(
+    [
+      ['grid', 'Rutnät'],
+      ['tracks', 'Spårlinjer'],
+      ['north', 'Nordlinje'],
+      ['trains', 'Tåg'],
+      ['canvas', 'Canvas'],
+      ['overlays', 'CSS-lager'],
+    ],
+    (id, on) => {
+      if (id === 'canvas') canvas.style.visibility = on ? '' : 'hidden';
+      else if (id === 'overlays') document.body.classList.toggle('dbg-no-overlays', !on);
+      else scene.setLayerVisible(id, on);
+    },
+  );
+  scene.setLayerVisible('north', true); // nordlinjen syns bara i felsökningsläget
+  const st = scene.renderState();
+  ui.setDebugState(Object.entries(st).map(([k, v]) => `${k}: ${v}`).join('\n'));
+}
 ui.onTap = (x, y) => {
   const rect = canvas.getBoundingClientRect();
   let best: { id: string; d: number } | null = null;
@@ -360,6 +387,12 @@ function frame(now: number): void {
       nearby = nearbyTrains(currentTrains(r.now), userPos, RADIUS_M);
       // perrongläget: tågen på perrongens nivå (tågets mitt PLATFORM.relativeDepthM under ögonhöjd, uppskattning)
       scene.setTrains(nearby, lineColor, station ? () => PLATFORM.relativeDepthM - EYE_HEIGHT_M : (l) => depthFor(l).meters);
+      updateGround();
+    } else if (!userPos && groundKey !== 'none') {
+      groundKey = 'none';
+      tracksAt = null;
+      scene.setGrid(null, 0);
+      scene.setTracks([], 0, lineColor);
     }
     scene.render();
     updateOverlay(r.orientation != null);
@@ -420,6 +453,36 @@ function updatePosition(r: SourceReading): void {
   gps.update({ lat: r.position.lat, lon: r.position.lon, accuracy: r.position.accuracy, t: r.position.t ?? wall });
   const e = gps.estimate;
   userPos = e ? { lat: e.lat, lon: e.lon } : null;
+}
+
+// ---------- rutnät och spårlinje (Del 5) ----------
+/** Rutnätet: standard av. Spårlinjen och tågen visas oavsett. */
+let gridLevel: GridLevel = 'off';
+let groundKey = '';
+let groundAt = 0;
+let tracksAt: { lat: number; lon: number; tracks: LocalTrack[] } | null = null;
+
+/**
+ * Spårlinjen i spårets höjd (vanligt läge: tunnelgolvet under tågen; perrongläget: perronggolvet) och rutnätet bara
+ * i ett band runt spåret, inom 80 m, när det betyder något (tåg inom radien och användbar fix, eller perrongläget).
+ * Räknas om när man flyttat sig mer än 2 m (högst en gång per sekund) eller när läget ändras.
+ */
+function updateGround(): void {
+  if (!metro || !userPos) return;
+  const y = station ? 0 : -(depthFor('M1').meters + TRAIN.height / 2);
+  const show = gridVisible({ level: gridLevel, platform: !!station, nearbyCount: nearby.length, gpsAccuracy: station ? null : gpsAccuracy });
+  const key = `${show}|${gridLevel}|${!!station}|${y}`;
+  const moved = !tracksAt || haversine(tracksAt.lat, tracksAt.lon, userPos.lat, userPos.lon) > 2;
+  if (key === groundKey && (!moved || performance.now() - groundAt < 1000)) return;
+  groundKey = key;
+  groundAt = performance.now();
+  if (moved || !tracksAt) tracksAt = { lat: userPos.lat, lon: userPos.lon, tracks: localTracks(metro, userPos, 150) };
+  // spåren räknas relativt där de beräknades; scenen har användaren i origo
+  const shift = toLocalMeters(userPos, tracksAt.lat, tracksAt.lon);
+  const tracks = tracksAt.tracks.map((t) => ({ line: t.line, pts: t.pts.map(([x, z]) => [x + shift.east, z - shift.north] as [number, number]) }));
+  scene.setTracks(tracks, y, lineColor);
+  scene.setGrid(show ? buildGridSegments(tracks, y) : null, gridOpacity(gridLevel));
+  scene.setDropLines(!station);
 }
 
 function stepSimKeys(sim: SimSource, dt: number): void {
@@ -553,7 +616,7 @@ function renderPlatform(): void {
     next: nextTrainText(next, now),
     src: next ? sourceLabel(next.run.source, next.delaySec) : '',
     hint: st.aligned
-      ? alignNote || 'Riktad längs spåret. Kompassen används inte här, bara gyrot. Rikta om om vyn har glidit.'
+      ? alignNote || 'Riktad längs spåret. Bara gyrot används här; rikta om om vyn har glidit.'
       : alignNote || `Rikta kameran längs perrongen mot det håll tåget kommer ifrån${st.fromName ? ` (från ${st.fromName})` : ''} och tryck.`,
     aligned: st.aligned,
   });
